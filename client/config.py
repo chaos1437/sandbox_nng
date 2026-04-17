@@ -9,11 +9,13 @@ def load_client_config(path: str = "config/client.yaml") -> dict:
         return yaml.safe_load(f)
 
 def resolve_controls(controls: dict) -> dict:
-    """Resolve YAML string keys (e.g. "KEY_UP") to integer curses codes."""
+    """Resolve YAML string keys to integer curses codes."""
     resolved = {}
     for action, key_name in controls.items():
         if isinstance(key_name, str) and hasattr(curses, key_name):
             resolved[action] = getattr(curses, key_name)
+        elif isinstance(key_name, str) and len(key_name) == 1:
+            resolved[action] = ord(key_name)
         else:
             resolved[action] = key_name
     return resolved
