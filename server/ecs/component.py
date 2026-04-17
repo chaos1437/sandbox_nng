@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 
+__all__ = ["Component"]
 
-@dataclass
+
+@dataclass(frozen=True)
 class Component:
     """Base class for ECS components.
 
