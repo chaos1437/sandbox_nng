@@ -28,16 +28,16 @@ class NetworkClient:
 
     async def send(self, msg: Message):
         if self.writer:
-            self.writer.write(encode(msg))
+            self.writer.write(encode(msg) + b'\n')
             await self.writer.drain()
 
     async def receive_loop(self):
         while self._running:
             try:
-                data = await self.reader.read(1024)
+                data = await self.reader.readline()
                 if not data:
                     break
-                msg = decode(data)
+                msg = decode(data.rstrip(b'\n'))
                 await self.incoming.put(msg)
             except Exception as e:
                 log.error(f"Receive error: {e}")

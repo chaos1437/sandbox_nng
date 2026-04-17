@@ -16,10 +16,10 @@ async def handle_client(reader, writer, state):
 
     try:
         while True:
-            data = await reader.read(1024)
+            data = await reader.readline()
             if not data:
                 break
-            msg = decode(data)
+            msg = decode(data.rstrip(b'\n'))
             log.info(f"Received: {msg.type} from {msg.player_id}")
 
             if msg.type == MSG_JOIN:
@@ -35,14 +35,14 @@ async def handle_client(reader, writer, state):
                         "map": state.get_map_snapshot(),
                     },
                 )
-                writer.write(encode(resp))
+                writer.write(encode(resp) + b'\n')
                 await writer.drain()
                 log.info(f"Sent joined to {player_id}")
 
             elif player_id:
                 resp = handle_message(state, msg)
                 if resp:
-                    writer.write(encode(resp))
+                    writer.write(encode(resp) + b'\n')
                     await writer.drain()
     except Exception as e:
         log.error(f"Error: {e}")
