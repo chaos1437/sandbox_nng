@@ -9,5 +9,4 @@ from shared.constants import (
     MSG_LEAVE,
     MSG_MOVE,
     MSG_STATE_SYNC,
-    MSG_MAP_SYNC,
 )
