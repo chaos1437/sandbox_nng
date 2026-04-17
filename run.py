@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Auto-updating launcher for roguelike game."""
+import asyncio
 import subprocess
 import sys
 import argparse
@@ -84,7 +85,6 @@ def main():
         if args.port != 8765:
             sys.argv.extend(["--port", str(args.port)])
         from server.main import main as server_main
-        import asyncio
         asyncio.run(server_main())
     else:
         # Client
@@ -95,7 +95,9 @@ def main():
 
         from client.main import main as client_main
         import curses
-        curses.wrapper(lambda stdscr: asyncio.run(client_main(stdscr, cfg)))
+        def run(stdscr):
+            asyncio.run(client_main(stdscr, cfg))
+        curses.wrapper(run)
 
 
 if __name__ == "__main__":

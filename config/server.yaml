@@ -1,10 +1,9 @@
+map:
+  height: 20
+  width: 40
+player:
+  max_speed_tiles_per_sec: 10.0
 server:
   port: 8765
   tick_rate: 60
-
-player:
-  max_speed_tiles_per_sec: 10.0
-
-map:
-  width: 40
-  height: 20
+version: 1
