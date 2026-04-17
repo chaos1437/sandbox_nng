@@ -11,7 +11,7 @@ from shared.protocol import Message
 from shared.constants import MsgType
 from shared.logging import setup_logger
 
-log = setup_logger("client", "client.log")
+log = setup_logger("client", "client.log", console=False)
 
 async def main(stdscr):
     stdscr.keypad(True)
@@ -63,7 +63,6 @@ async def main(stdscr):
             renderer.render(state)
 
         # Input
-        curses.napms(33)  # ~30fps
         key = renderer.get_key()
         if key != -1:
             log.debug(f"Key pressed: {key} (quit={quit_key})")

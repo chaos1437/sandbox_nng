@@ -4,7 +4,7 @@ from shared.protocol import Message
 from shared.serializers import Serializer
 from shared.logging import setup_logger
 
-log = setup_logger("network", "client.log")
+log = setup_logger("network", "client.log", console=False)
 
 
 class NetworkClient:
