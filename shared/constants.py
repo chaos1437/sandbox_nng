@@ -1,27 +1,29 @@
 # shared/constants.py
-PROTOCOL_VERSION = "0.1.0"
+from enum import StrEnum
 
-# Directions for movement
+
+class MsgType(StrEnum):
+    JOIN = "join"
+    LEAVE = "leave"
+    MOVE = "move"
+    STATE_SYNC = "state_sync"
+
+
+# Directions
 DIR_NONE = (0, 0)
-DIR_NORTH = (0, -1)
-DIR_SOUTH = (0, 1)
-DIR_EAST  = (1, 0)
-DIR_WEST  = (-1, 0)
+DIR_UP = (0, -1)
+DIR_DOWN = (0, 1)
+DIR_RIGHT = (1, 0)
+DIR_LEFT = (-1, 0)
 
 DIRS = {
-    "up":    DIR_NORTH,
-    "down":  DIR_SOUTH,
-    "left":  DIR_WEST,
-    "right": DIR_EAST,
+    "up": DIR_UP,
+    "down": DIR_DOWN,
+    "left": DIR_LEFT,
+    "right": DIR_RIGHT,
 }
 
-# Tile types (ASCII chars)
-TILE_EMPTY  = "."
-TILE_WALL   = "#"
+# Tiles
+TILE_EMPTY = "."
+TILE_WALL = "#"
 TILE_PLAYER = "@"
-
-# Message types
-MSG_JOIN        = "join"
-MSG_LEAVE       = "leave"
-MSG_MOVE        = "move"
-MSG_STATE_SYNC  = "state_sync"

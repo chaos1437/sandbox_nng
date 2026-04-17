@@ -1,7 +1,7 @@
 # shared/protocol.py
 import dataclasses
 import json
-from shared.constants import *
+from shared.constants import MsgType
 
 
 @dataclasses.dataclass
@@ -21,8 +21,14 @@ class Message:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Message":
+        raw_type = d["type"]
+        # Normalize string to MsgType enum if matches
+        try:
+            msg_type = MsgType(raw_type)
+        except ValueError:
+            msg_type = raw_type
         return cls(
-            type=d["type"],
+            type=msg_type,
             seq=d.get("seq", 0),
             player_id=d.get("player_id", ""),
             payload=d.get("payload", {}),

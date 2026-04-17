@@ -5,7 +5,7 @@ import argparse
 from server.game_state import GameState
 from server.handlers import handle_message
 from shared.protocol import Message
-from shared.constants import MSG_JOIN, MSG_STATE_SYNC
+from shared.constants import MsgType
 from shared.logging import setup_logger
 from shared.serializers import Serializer
 

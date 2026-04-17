@@ -8,7 +8,7 @@ from client.state import ClientGameState
 from client.input_handler import InputHandler
 from client.renderer import RoguelikeRenderer
 from shared.protocol import Message
-from shared.constants import MSG_JOIN, MSG_MOVE, MSG_LEAVE, MSG_STATE_SYNC
+from shared.constants import MsgType
 from shared.logging import setup_logger
 
 log = setup_logger("client", "client.log")
@@ -50,7 +50,7 @@ async def main(stdscr):
             try:
                 msg = network.incoming.get_nowait()
                 log.debug(f"Received: {msg.type}")
-                if msg.type == MSG_STATE_SYNC:
+                if msg.type == MsgType.STATE_SYNC:
                     state.apply_state_sync(msg.payload)
                     if not state.my_player_id and msg.player_id:
                         state.set_player_id(msg.player_id)

@@ -5,7 +5,7 @@ from server.player import Player
 from server.game_state import GameState
 from server.handlers import handle_message
 from shared.protocol import Message
-from shared.constants import MSG_JOIN, MSG_MOVE, MSG_LEAVE, MSG_STATE_SYNC
+from shared.constants import MsgType
 
 
 class TestGameMap:
@@ -104,33 +104,33 @@ class TestGameState:
 class TestHandlers:
     def test_join_creates_player_returns_state_sync(self):
         s = GameState()
-        msg = Message(type=MSG_JOIN)
+        msg = Message(type=MsgType.JOIN)
         resp = handle_message(s, msg)
         assert resp is not None
-        assert resp.type == MSG_STATE_SYNC
+        assert resp.type == MsgType.STATE_SYNC
         assert resp.player_id in s.players
 
     def test_move_updates_position_returns_state_sync(self):
         s = GameState()
         p = s.add_player("p1")
         old_x = p.x
-        msg = Message(type=MSG_MOVE, player_id="p1", payload={"dx": 2, "dy": 0})
+        msg = Message(type=MsgType.MOVE, player_id="p1", payload={"dx": 2, "dy": 0})
         resp = handle_message(s, msg)
         assert resp is not None
-        assert resp.type == MSG_STATE_SYNC
+        assert resp.type == MsgType.STATE_SYNC
         assert p.x == old_x + 2
 
     def test_leave_removes_player(self):
         s = GameState()
         p = s.add_player("p1")
-        msg = Message(type=MSG_LEAVE, player_id="p1")
+        msg = Message(type=MsgType.LEAVE, player_id="p1")
         resp = handle_message(s, msg)
         assert resp is None
         assert "p1" not in s.players
 
     def test_move_unknown_player_returns_state_sync(self):
         s = GameState()
-        msg = Message(type=MSG_MOVE, player_id="unknown", payload={"dx": 1, "dy": 0})
+        msg = Message(type=MsgType.MOVE, player_id="unknown", payload={"dx": 1, "dy": 0})
         resp = handle_message(s, msg)
         assert resp is not None
-        assert resp.type == MSG_STATE_SYNC
+        assert resp.type == MsgType.STATE_SYNC
