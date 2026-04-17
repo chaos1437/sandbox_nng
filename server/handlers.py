@@ -9,7 +9,7 @@ def handle_message(state, msg: Message) -> Message | None:
         return Message(
             type=MsgType.STATE_SYNC,
             seq=state.seq,
-            player_id=player.player_id,
+            player_id=player.id,
             payload=state.get_state_snapshot(include_map=True),
         )
     elif msg.type == MsgType.MOVE:

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 __all__ = ["Component", "PositionComponent"]
 
 
-@dataclass(frozen=True)
+@dataclass
 class Component:
     """Base class for ECS components.
 
@@ -13,7 +13,7 @@ class Component:
     entity_id: str
 
 
-@dataclass(frozen=True)
+@dataclass
 class PositionComponent(Component):
     """Component holding a 2D position."""
     x: int

@@ -2,8 +2,7 @@
 import asyncio
 import traceback
 import argparse
-from server.game_state import GameState
-from server.handlers import handle_message
+from server.ecs.game_world import GameWorld
 from shared.protocol import Message
 from shared.constants import MsgType
 from shared.logging import setup_logger
@@ -39,7 +38,7 @@ async def broadcast(clients: list[ClientConnection], msg: Message):
 
 
 async def handle_client(
-    reader, writer, state: GameState,
+    reader, writer, world: GameWorld,
     clients: list[ClientConnection], serializer: Serializer
 ):
     conn = ClientConnection(reader, writer, serializer)
@@ -62,7 +61,7 @@ async def handle_client(
                 payload=msg.payload,
             )
 
-            resp = handle_message(state, msg)
+            resp = world.handle_message(msg)
             if resp:
                 # SECURITY: always use server-assigned player_id
                 if resp.player_id and not conn.player_id:
@@ -80,7 +79,7 @@ async def handle_client(
         log.error(f"Error: {e}\n{traceback.format_exc()}")
     finally:
         if conn.player_id:
-            state.remove_player(conn.player_id)
+            world.remove_entity(conn.player_id)
         clients.remove(conn)
         conn.writer.close()
         await conn.writer.wait_closed()
@@ -92,11 +91,11 @@ async def main(port: int = 8765, serializer: Serializer | None = None):
         from shared.serializers import JsonSerializer
         serializer = JsonSerializer()
 
-    state = GameState()
+    world = GameWorld()
     clients: list[ClientConnection] = []
 
     async def handler(reader, writer):
-        await handle_client(reader, writer, state, clients, serializer)
+        await handle_client(reader, writer, world, clients, serializer)
 
     server = await asyncio.start_server(handler, "0.0.0.0", port)
     log.info(f"Listening on port {port}")
