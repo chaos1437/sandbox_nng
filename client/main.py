@@ -1,8 +1,7 @@
 # client/main.py
 import asyncio
-import argparse
 import curses
-from client.config import load_client_config, resolve_controls
+from client.config import resolve_controls
 from client.network import NetworkClient
 from client.state import ClientGameState
 from client.input_handler import InputHandler
@@ -13,24 +12,21 @@ from shared.logging import setup_logger
 
 log = setup_logger("client", "client.log", console=False)
 
-async def main(stdscr):
-    stdscr.keypad(True)
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
-    args = parser.parse_args()
 
-    config = load_client_config()
+async def main(stdscr, config):
+    """Run client. config is a ClientConfig dataclass."""
+    stdscr.keypad(True)
+
     state = ClientGameState()
-    network = NetworkClient(args.host, args.port)
+    network = NetworkClient(config.host, config.port)
     renderer = RoguelikeRenderer(stdscr)
-    controls = resolve_controls(config.get("controls", {}))
+    controls = resolve_controls(config.controls)
     input_handler = InputHandler(controls)
     quit_key = controls.get("quit", ord('q'))
 
     if not await network.connect():
         return
-    log.info(f"Connected to {args.host}:{args.port}")
+    log.info(f"Connected to {config.host}:{config.port}")
 
     # Send join
     join_msg = Message(type=MsgType.JOIN, player_id="")
@@ -91,4 +87,16 @@ async def main(stdscr):
     await network.disconnect()
 
 if __name__ == "__main__":
-    curses.wrapper(lambda stdscr: asyncio.run(main(stdscr)))
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    args = parser.parse_args()
+
+    from shared.config import load_client_config
+    cfg = load_client_config()
+    # CLI args override config file
+    cfg.host = args.host
+    cfg.port = args.port
+
+    curses.wrapper(lambda stdscr: asyncio.run(main(stdscr, cfg)))

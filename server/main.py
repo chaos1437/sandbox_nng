@@ -7,6 +7,7 @@ from shared.protocol import Message
 from shared.constants import MsgType
 from shared.logging import setup_logger
 from shared.serializers import Serializer
+from shared.config import load_server_config
 
 log = setup_logger("server", "server.log")
 
@@ -91,7 +92,13 @@ async def main(port: int = 8765, serializer: Serializer | None = None):
         from shared.serializers import JsonSerializer
         serializer = JsonSerializer()
 
+    cfg = load_server_config()
+    # CLI port overrides config
+    port = port or cfg.port
+
     world = GameWorld()
+    from server.ecs.systems.movement_controller import MovementController
+    world.register_system(MovementController(max_speed_tiles_per_sec=cfg.player_max_speed_tiles_per_sec))
     clients: list[ClientConnection] = []
 
     async def handler(reader, writer):
