@@ -23,27 +23,15 @@ async def handle_client(reader, writer, state):
             log.info(f"Received: {msg.type} from {msg.player_id}")
 
             if msg.type == MSG_JOIN:
-                player = state.add_player()
-                player_id = player.player_id
-                resp = Message(
-                    type="joined",
-                    seq=state.seq,
-                    player_id=player_id,
-                    payload={
-                        "x": player.x,
-                        "y": player.y,
-                        "map": state.get_map_snapshot(),
-                    },
-                )
+                player_id = msg.player_id
+
+            resp = handle_message(state, msg)
+            if resp:
+                if resp.type == MSG_STATE_SYNC and not player_id:
+                    player_id = resp.player_id
                 writer.write(encode(resp) + b'\n')
                 await writer.drain()
-                log.info(f"Sent joined to {player_id}")
-
-            elif player_id:
-                resp = handle_message(state, msg)
-                if resp:
-                    writer.write(encode(resp) + b'\n')
-                    await writer.drain()
+                log.info(f"Sent {resp.type} to {resp.player_id}")
     except Exception as e:
         log.error(f"Error: {e}")
     finally:

@@ -27,18 +27,18 @@ class GameState:
             return False
         return player.move(dx, dy, self.map)
 
-    def get_state_snapshot(self) -> dict:
-        return {
+    def get_state_snapshot(self, include_map: bool = False) -> dict:
+        snap = {
             "seq": self.seq,
             "players": {
                 pid: {"x": p.x, "y": p.y}
                 for pid, p in self.players.items()
             },
         }
-
-    def get_map_snapshot(self) -> dict:
-        return {
-            "width": self.map.width,
-            "height": self.map.height,
-            "tiles": self.map.to_lines(),
-        }
+        if include_map:
+            snap["map"] = {
+                "width": self.map.width,
+                "height": self.map.height,
+                "tiles": self.map.to_lines(),
+            }
+        return snap

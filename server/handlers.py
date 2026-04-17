@@ -1,15 +1,16 @@
 # server/handlers.py
 from shared.protocol import Message, encode
-from shared.constants import MSG_JOIN, MSG_LEAVE, MSG_MOVE
+from shared.constants import MSG_JOIN, MSG_LEAVE, MSG_MOVE, MSG_STATE_SYNC
 
 def handle_message(state, msg: Message) -> Message | None:
     if msg.type == MSG_JOIN:
         player = state.add_player(msg.player_id or None)
+        state.seq += 1
         return Message(
-            type="joined",
+            type=MSG_STATE_SYNC,
             seq=state.seq,
             player_id=player.player_id,
-            payload={"x": player.x, "y": player.y},
+            payload=state.get_state_snapshot(include_map=True),
         )
     elif msg.type == MSG_MOVE:
         dx = msg.payload.get("dx", 0)
@@ -17,7 +18,7 @@ def handle_message(state, msg: Message) -> Message | None:
         state.move_player(msg.player_id, dx, dy)
         state.seq += 1
         return Message(
-            type="state_sync",
+            type=MSG_STATE_SYNC,
             seq=state.seq,
             payload=state.get_state_snapshot(),
         )

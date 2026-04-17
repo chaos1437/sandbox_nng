@@ -49,13 +49,12 @@ async def main(stdscr):
             try:
                 msg = network.incoming.get_nowait()
                 log.debug(f"Received: {msg.type}")
-                if msg.type == "joined":
-                    state.set_player_id(msg.player_id)
-                    network.player_id = msg.player_id
-                    state.apply_map_sync(msg.payload["map"])
-                    log.info(f"Joined as {msg.player_id}, map {state.map_width}x{state.map_height}")
-                elif msg.type == "state_sync":
+                if msg.type == "state_sync":
                     state.apply_state_sync(msg.payload)
+                    if not network.player_id and msg.player_id:
+                        state.set_player_id(msg.player_id)
+                        network.player_id = msg.player_id
+                        log.info(f"Joined as {msg.player_id}, map {state.map_width}x{state.map_height}")
             except asyncio.QueueEmpty:
                 break
 
