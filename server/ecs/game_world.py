@@ -4,7 +4,7 @@ from typing import Optional
 
 from server.ecs import System, Entity
 from server.ecs.component import PositionComponent
-from server.map import GameMap
+from server.ecs.map import GameMap
 from shared.protocol import Message
 from shared.constants import MsgType
 

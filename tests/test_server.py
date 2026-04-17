@@ -1,6 +1,6 @@
 # tests/test_server.py
 import pytest
-from server.map import GameMap
+from server.ecs.map import GameMap
 from server.ecs.game_world import GameWorld
 from server.ecs.entity import Entity
 from server.ecs.component import PositionComponent
