@@ -4,9 +4,9 @@
 
 **Goal:** Prototype roguelike CLI game with Source Engine-style client-server architecture. Client sends player actions, renders game state. Future: client-side prediction with rollback.
 
-**Architecture:** Client renders roguelike ASCII map from authoritative server state. Network layer is async (asyncio). Client uses fixed timestep game loop separate from render loop. Protocol: delta-state messages over WebSocket (or TCP). Shared `shared/` module contains all message types and protocol constants.
+**Architecture:** Client renders roguelike ASCII map from authoritative server state. Network layer is async (asyncio TCP). Protocol: newline-delimited JSON messages. Server uses ECS pattern for extensibility. Shared `shared/` module contains protocol, config (versioned), logging, serializers.
 
-**Tech Stack:** Python 3.11+, asyncio, yaml, websockets (or asyncio TCP), standard library `curses` or `curses` wrapper for rendering.
+**Tech Stack:** Python 3.11+, asyncio, yaml, standard library `curses`.
 
 ---
 
@@ -14,29 +14,50 @@
 
 ```
 /home/llh/proj/sandbox_nng/
-├── SPEC.md                          # Living specification
+├── run.py                  # Auto-updating launcher (Y/n prompt)
+├── requirements.txt         # pyyaml
+├── docs/
+│   └── superpowers/
+│       └── plans/
+│           └── 2026-04-17-cli-roguelike-game.md
+├── config/
+│   ├── client.yaml         # server host/port, controls, render fps
+│   └── server.yaml         # port, tick_rate, map size, player speed
 ├── client/
 │   ├── __init__.py
-│   ├── main.py                      # Entry point, curses wrapper, game loop
-│   ├── config.py                    # Load YAML config
-│   ├── renderer.py                  # ASCII roguelike render (curses)
-│   ├── input_handler.py             # Keyboard capture, maps curses codes to dirs
-│   ├── network.py                   # Async TCP client, send/receive loop
-│   └── state.py                     # Local game state (positions, map)
+│   ├── main.py             # Entry point, curses wrapper, game loop
+│   ├── config.py           # resolve_controls (YAML → curses codes)
+│   ├── renderer.py         # ASCII roguelike render (curses)
+│   ├── input_handler.py    # Keyboard capture, maps curses codes to dirs
+│   ├── network.py          # Async TCP client, send/receive loop
+│   └── state.py            # Local game state (positions, map)
 ├── server/
 │   ├── __init__.py
-│   ├── main.py                      # Entry point, asyncio server, client handler
-│   ├── game_state.py                # Authoritative game state, player management
-│   ├── player.py                    # Player entity, position, movement
-│   ├── map.py                       # Map representation, collision
-│   └── handlers.py                  # Handle join/move/leave, build responses
+│   ├── main.py             # Entry point, asyncio server, client handler
+│   └── ecs/                # Entity-Component-System engine
+│       ├── __init__.py     # Exports: System, Component, Entity, GameWorld
+│       ├── system.py       # System ABC with lifecycle hooks
+│       ├── component.py     # Component (data), PositionComponent
+│       ├── entity.py        # Entity with component registry
+│       ├── game_world.py   # GameWorld: entities + systems + map + message routing
+│       ├── map.py          # GameMap: 2D grid of tiles
+│       └── systems/
+│           ├── __init__.py
+│           └── movement_controller.py  # Rate-limits player movement
 ├── shared/
 │   ├── __init__.py
-│   ├── protocol.py                  # Message dataclass, encode/decode
-│   └── constants.py                 # Protocol version, directions, tile types, msg types
-└── config/
-    ├── client.yaml                  # Server address, controls (curses key names), render fps
-    └── server.yaml                  # Port, tick rate, map size
+│   ├── protocol.py         # Message dataclass, encode/decode
+│   ├── constants.py        # MsgType enum, DIRS, TILE_* constants
+│   ├── serializers.py       # Serializer ABC (JsonSerializer default)
+│   ├── logging.py          # setup_logger (console, file)
+│   └── config.py           # Versioned config loading with migration
+└── tests/
+    ├── __init__.py
+    ├── test_client.py
+    ├── test_server.py
+    ├── test_shared.py
+    ├── test_config.py
+    └── test_ecs.py
 ```
 
 ---
@@ -52,52 +73,54 @@
 
 ```python
 # shared/constants.py
-PROTOCOL_VERSION = "0.1.0"
+from enum import StrEnum
 
-# Directions for movement
-DIR_NONE = (0, 0)
-DIR_NORTH = (0, -1)
-DIR_SOUTH = (0, 1)
-DIR_EAST  = (1, 0)
-DIR_WEST  = (-1, 0)
+class MsgType(StrEnum):
+    JOIN = "join"
+    LEAVE = "leave"
+    MOVE = "move"
+    STATE_SYNC = "state_sync"
+
+# Directions for movement (up/down/left/right)
+DIR_UP    = (0, -1)
+DIR_DOWN  = (0, 1)
+DIR_LEFT  = (-1, 0)
+DIR_RIGHT = (1, 0)
 
 DIRS = {
-    "north": DIR_NORTH,
-    "south": DIR_SOUTH,
-    "east":  DIR_EAST,
-    "west":  DIR_WEST,
+    "up": DIR_UP,
+    "down": DIR_DOWN,
+    "left": DIR_LEFT,
+    "right": DIR_RIGHT,
 }
 
 # Tile types (ASCII chars)
-TILE_EMPTY  = "."
+TILE_EMPTY  = " "
 TILE_WALL   = "#"
 TILE_PLAYER = "@"
-
-# Message types
-MSG_JOIN        = "join"
-MSG_LEAVE       = "leave"
-MSG_MOVE        = "move"
-MSG_STATE_SYNC  = "state_sync"
-MSG_MAP_SYNC    = "map_sync"
 ```
 
 - [ ] **Step 2: Create shared/protocol.py**
 
 ```python
 # shared/protocol.py
-import dataclasses
-from shared.constants import *
+from dataclasses import dataclass
+from shared.constants import MsgType
 
-@dataclasses.dataclass
+@dataclass
 class Message:
-    type: str
+    type: MsgType | str
     seq: int = 0
     player_id: str = ""
-    payload: dict = dataclasses.field(default_factory=dict)
+    payload: dict = None
+
+    def __post_init__(self):
+        if self.payload is None:
+            self.payload = {}
 
     def to_dict(self) -> dict:
         return {
-            "type": self.type,
+            "type": str(self.type),
             "seq": self.seq,
             "player_id": self.player_id,
             "payload": self.payload,
@@ -105,51 +128,158 @@ class Message:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Message":
+        raw_type = d["type"]
+        try:
+            msg_type = MsgType(raw_type)
+        except ValueError:
+            msg_type = raw_type
         return cls(
-            type=d["type"],
+            type=msg_type,
             seq=d.get("seq", 0),
             player_id=d.get("player_id", ""),
             payload=d.get("payload", {}),
         )
-
-def encode(msg: Message) -> bytes:
-    import json
-    return json.dumps(msg.to_dict()).encode("utf-8")
-
-def decode(data: bytes) -> Message:
-    import json
-    return Message.from_dict(json.loads(data.decode("utf-8")))
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Create shared/serializers.py**
 
-```bash
-git add shared/
-git commit -m "feat: add shared protocol constants and message types"
+```python
+# shared/serializers.py
+from abc import ABC, abstractmethod
+from shared.protocol import Message
+import json
+
+class Serializer(ABC):
+    @abstractmethod
+    def encode(self, msg: Message) -> bytes: ...
+
+    @abstractmethod
+    def decode(self, data: bytes) -> Message: ...
+
+class JsonSerializer(Serializer):
+    def encode(self, msg: Message) -> bytes:
+        return json.dumps(msg.to_dict()).encode("utf-8")
+
+    def decode(self, data: bytes) -> Message:
+        return Message.from_dict(json.loads(data.decode("utf-8")))
 ```
+
+- [ ] **Step 4: Commit**
 
 ---
 
-## Task 2: Server - Map and Game State
+## Task 2: Server ECS Architecture
 
 **Files:**
 - Create: `server/__init__.py`
-- Create: `server/map.py`
-- Create: `server/player.py`
-- Create: `server/game_state.py`
-- Create: `server/handlers.py`
+- Create: `server/ecs/__init__.py`
+- Create: `server/ecs/system.py`
+- Create: `server/ecs/component.py`
+- Create: `server/ecs/entity.py`
+- Create: `server/ecs/game_world.py`
+- Create: `server/ecs/map.py`
+- Create: `server/ecs/systems/__init__.py`
+- Create: `server/ecs/systems/movement_controller.py`
+- Create: `server/main.py`
 
-- [ ] **Step 1: Create server/map.py**
+- [ ] **Step 1: Create server/ecs/component.py**
 
 ```python
-# server/map.py
+# server/ecs/component.py
+from dataclasses import dataclass
+
+__all__ = ["Component", "PositionComponent"]
+
+@dataclass
+class Component:
+    """Base class for ECS components. Pure data, no behavior."""
+    entity_id: str = ""
+
+@dataclass
+class PositionComponent(Component):
+    """2D position."""
+    x: int = 0
+    y: int = 0
+```
+
+- [ ] **Step 2: Create server/ecs/entity.py**
+
+```python
+# server/ecs/entity.py
+from typing import TypeVar, Type, Optional
+
+from server.ecs.component import Component
+
+__all__ = ["Entity"]
+
+C = TypeVar("C", bound=Component)
+
+class Entity:
+    """An ECS entity - an ID with a collection of components."""
+
+    def __init__(self, entity_id: str) -> None:
+        self.id = entity_id
+        self.components: dict[Type[Component], Component] = {}
+
+    def add_component(self, component: Component) -> None:
+        component.entity_id = self.id
+        self.components[type(component)] = component
+
+    def remove_component(self, component_type: Type[C]) -> None:
+        self.components.pop(component_type, None)
+
+    def has_component(self, component_type: Type[Component]) -> bool:
+        return component_type in self.components
+
+    def get_component(self, component_type: Type[C]) -> Optional[C]:
+        return self.components.get(component_type)
+```
+
+- [ ] **Step 3: Create server/ecs/system.py**
+
+```python
+# server/ecs/system.py
+from abc import ABC
+
+__all__ = ["System"]
+
+class System(ABC):
+    """ECS system - behavior attached to entities."""
+
+    def __init__(self) -> None:
+        raise NotImplementedError("System is abstract")
+
+    def on_player_join(self, world: "GameWorld", player_id: str) -> None:
+        """Called when a player joins."""
+        pass
+
+    def on_before_move(self, world: "GameWorld", player_id: str, dx: int, dy: int) -> bool:
+        """Called before move. Return False to block."""
+        return True
+
+    def on_after_move(self, world: "GameWorld", player_id: str, dx: int, dy: int) -> None:
+        """Called after move."""
+        pass
+
+    def on_player_leave(self, world: "GameWorld", player_id: str) -> None:
+        """Called when a player leaves."""
+        pass
+
+    def update(self, world: "GameWorld") -> None:
+        """Called each tick."""
+        pass
+```
+
+- [ ] **Step 4: Create server/ecs/map.py**
+
+```python
+# server/ecs/map.py
 from shared.constants import TILE_EMPTY, TILE_WALL
 
 class GameMap:
     def __init__(self, width: int = 40, height: int = 20):
         self.width = width
         self.height = height
-        # 2D grid, all empty by default
         self.tiles = [[TILE_EMPTY for _ in range(width)] for _ in range(height)]
 
     def set_wall(self, x: int, y: int):
@@ -165,180 +295,243 @@ class GameMap:
         return [row[:] for row in self.tiles]
 ```
 
-- [ ] **Step 2: Create server/player.py**
+- [ ] **Step 5: Create server/ecs/game_world.py**
 
 ```python
-# server/player.py
-class Player:
-    def __init__(self, player_id: str, x: int, y: int):
-        self.player_id = player_id
-        self.x = x
-        self.y = y
-
-    def move(self, dx: int, dy: int, game_map) -> bool:
-        nx, ny = self.x + dx, self.y + dy
-        if game_map.is_passable(nx, ny):
-            self.x, self.y = nx, ny
-            return True
-        return False
-```
-
-- [ ] **Step 3: Create server/game_state.py**
-
-```python
-# server/game_state.py
+# server/ecs/game_world.py
 import uuid
-from server.map import GameMap
-from server.player import Player
+from typing import Optional
 
-class GameState:
-    def __init__(self):
-        self.map = GameMap()
-        self.players: dict[str, Player] = {}
-        self.seq = 0
+from server.ecs import System, Entity
+from server.ecs.component import PositionComponent
+from server.ecs.map import GameMap
+from shared.protocol import Message
+from shared.constants import MsgType
 
-    def add_player(self, player_id: str = None) -> Player:
-        if player_id is None:
-            player_id = str(uuid.uuid4())[:8]
-        # Spawn at center
-        x, y = self.map.width // 2, self.map.height // 2
-        player = Player(player_id, x, y)
-        self.players[player_id] = player
-        return player
+_SHORT_ID_LEN = 8
 
-    def remove_player(self, player_id: str):
-        self.players.pop(player_id, None)
+class GameWorld:
+    """Game world: entities + systems + map + message routing."""
 
-    def move_player(self, player_id: str, dx: int, dy: int) -> bool:
-        player = self.players.get(player_id)
-        if not player:
-            return False
-        return player.move(dx, dy, self.map)
+    def __init__(self) -> None:
+        self.entities: dict[str, Entity] = {}
+        self.systems: list[System] = []
+        self.map: GameMap = GameMap()
+        self.seq: int = 0
 
-    def get_state_snapshot(self) -> dict:
-        return {
-            "seq": self.seq,
-            "players": {
-                pid: {"x": p.x, "y": p.y}
-                for pid, p in self.players.items()
-            },
-        }
+    def register_system(self, system: System) -> None:
+        self.systems.append(system)
 
-    def get_map_snapshot(self) -> dict:
-        return {
-            "width": self.map.width,
-            "height": self.map.height,
-            "tiles": self.map.to_lines(),
-        }
-```
+    def add_entity(self, entity: Entity) -> None:
+        self.entities[entity.id] = entity
 
-- [ ] **Step 4: Create server/handlers.py**
+    def remove_entity(self, entity_id: str) -> None:
+        self.entities.pop(entity_id, None)
 
-```python
-# server/handlers.py
-from shared.protocol import Message, encode
-from shared.constants import MSG_JOIN, MSG_LEAVE, MSG_MOVE
+    def get_entity(self, entity_id: str) -> Optional[Entity]:
+        return self.entities.get(entity_id)
 
-def handle_message(state, msg: Message) -> Message | None:
-    if msg.type == MSG_JOIN:
-        player = state.add_player(msg.player_id or None)
-        return Message(
-            type="joined",
-            seq=state.seq,
-            player_id=player.player_id,
-            payload={"x": player.x, "y": player.y},
-        )
-    elif msg.type == MSG_MOVE:
+    def handle_message(self, msg: Message) -> Optional[Message]:
+        if msg.type == MsgType.JOIN:
+            return self._handle_join(msg)
+        elif msg.type == MsgType.MOVE:
+            return self._handle_move(msg)
+        elif msg.type == MsgType.LEAVE:
+            return self._handle_leave(msg)
+        return None
+
+    def _handle_join(self, msg: Message) -> Message:
+        player_id = msg.player_id or uuid.uuid4().hex[:_SHORT_ID_LEN]
+        for system in self.systems:
+            system.on_player_join(self, player_id)
+        entity = Entity(player_id)
+        spawn_x = self.map.width // 2
+        spawn_y = self.map.height // 2
+        entity.add_component(PositionComponent(x=spawn_x, y=spawn_y))
+        self.add_entity(entity)
+        self.seq += 1
+        return self._make_state_sync(include_map=True, player_id=player_id)
+
+    def _handle_move(self, msg: Message) -> Message:
+        player_id = msg.player_id
         dx = msg.payload.get("dx", 0)
         dy = msg.payload.get("dy", 0)
-        state.move_player(msg.player_id, dx, dy)
-        state.seq += 1
+        if not isinstance(dx, int) or not isinstance(dy, int):
+            return self._make_state_sync()
+        for system in self.systems:
+            if not system.on_before_move(self, player_id, dx, dy):
+                return self._make_state_sync()
+        entity = self.get_entity(player_id)
+        if entity:
+            pos = entity.get_component(PositionComponent)
+            if pos:
+                nx, ny = pos.x + dx, pos.y + dy
+                if self.map.is_passable(nx, ny):
+                    entity.remove_component(PositionComponent)
+                    entity.add_component(PositionComponent(x=nx, y=ny))
+        for system in self.systems:
+            system.on_after_move(self, player_id, dx, dy)
+        self.seq += 1
+        return self._make_state_sync()
+
+    def _handle_leave(self, msg: Message) -> None:
+        player_id = msg.player_id
+        for system in self.systems:
+            system.on_player_leave(self, player_id)
+        self.remove_entity(player_id)
+        self.seq += 1
+
+    def _make_state_sync(self, include_map: bool = False, player_id: str = "") -> Message:
         return Message(
-            type="state_sync",
-            seq=state.seq,
-            payload=state.get_state_snapshot(),
+            type=MsgType.STATE_SYNC,
+            seq=self.seq,
+            player_id=player_id,
+            payload=self.get_state_snapshot(include_map),
         )
-    elif msg.type == MSG_LEAVE:
-        state.remove_player(msg.player_id)
-        return None
-    return None
+
+    def get_state_snapshot(self, include_map: bool = False) -> dict:
+        snap = {
+            "seq": self.seq,
+            "players": {
+                eid: {
+                    "x": entity.get_component(PositionComponent).x,
+                    "y": entity.get_component(PositionComponent).y,
+                }
+                for eid, entity in self.entities.items()
+                if entity.has_component(PositionComponent)
+            },
+        }
+        if include_map:
+            snap["map"] = {
+                "width": self.map.width,
+                "height": self.map.height,
+                "tiles": self.map.to_lines(),
+            }
+        return snap
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Create server/ecs/systems/movement_controller.py**
 
-```bash
-git add server/
-git commit -m "feat(server): add map, player, game state, message handlers"
+```python
+# server/ecs/systems/movement_controller.py
+from dataclasses import dataclass
+import time
+from server.ecs import System, GameWorld
+
+__all__ = ["MovementController", "PlayerMoveRecord"]
+
+@dataclass
+class PlayerMoveRecord:
+    last_move_time: float = 0.0
+    violations: int = 0
+    total_moves: int = 0
+
+class MovementController(System):
+    def __init__(self, max_speed_tiles_per_sec: float = 10.0) -> None:
+        self.max_speed = max_speed_tiles_per_sec
+        self._records: dict[str, PlayerMoveRecord] = {}
+
+    def on_before_move(self, world: GameWorld, player_id: str, dx: int, dy: int) -> bool:
+        now = time.time()
+        record = self._records.setdefault(player_id, PlayerMoveRecord())
+        min_interval = 1.0 / self.max_speed if self.max_speed > 0 else 0.0
+        if now - record.last_move_time < min_interval:
+            record.violations += 1
+            return False
+        record.last_move_time = now
+        record.total_moves += 1
+        return True
+
+    def on_player_leave(self, world: GameWorld, player_id: str) -> None:
+        self._records.pop(player_id, None)
+
+    def get_stats(self, player_id: str) -> dict:
+        record = self._records.get(player_id)
+        if record is None:
+            return {"total_moves": 0, "violations": 0}
+        return {"total_moves": record.total_moves, "violations": record.violations}
 ```
 
----
-
-## Task 3: Server - Main Loop and Networking
-
-**Files:**
-- Create: `server/main.py`
-- Modify: `server/__init__.py`
-
-- [ ] **Step 1: Create server/main.py**
+- [ ] **Step 7: Create server/main.py**
 
 ```python
 # server/main.py
 import asyncio
+import traceback
 import argparse
-from server.game_state import GameState
-from server.handlers import handle_message
-from shared.protocol import encode, decode
-from shared.constants import MSG_JOIN, MSG_LEAVE
+from server.ecs.game_world import GameWorld
+from server.ecs.systems.movement_controller import MovementController
+from shared.protocol import Message
+from shared.constants import MsgType
+from shared.logging import setup_logger
+from shared.serializers import Serializer
+from shared.config import load_server_config
 
-async def handle_client(reader, writer, state):
-    addr = writer.get_extra_info("peername")
-    print(f"[server] Client connected: {addr}")
-    player_id = None
+log = setup_logger("server", "server.log")
 
+class ClientConnection:
+    def __init__(self, reader, writer, serializer: Serializer):
+        self.reader = reader
+        self.writer = writer
+        self.serializer = serializer
+        self.player_id: str | None = None
+        self.addr = writer.get_extra_info("peername")
+
+    async def send(self, msg: Message):
+        data = self.serializer.encode(msg) + b'\n'
+        self.writer.write(data)
+        await self.writer.drain()
+
+async def broadcast(clients: list[ClientConnection], msg: Message):
+    alive = []
+    for conn in clients:
+        try:
+            await conn.send(msg)
+            alive.append(conn)
+        except Exception:
+            conn.writer.close()
+    return alive
+
+async def handle_client(reader, writer, world: GameWorld, clients: list[ClientConnection], serializer: Serializer):
+    conn = ClientConnection(reader, writer, serializer)
+    clients.append(conn)
+    log.info(f"Client connected: {conn.addr}")
     try:
         while True:
-            data = await reader.read(1024)
+            data = await reader.readline()
             if not data:
                 break
-            msg = decode(data)
-            print(f"[server] Received: {msg.type} from {msg.player_id}")
-
-            if msg.type == MSG_JOIN:
-                player = state.add_player()
-                player_id = player.player_id
-                resp = Message(
-                    type="joined",
-                    seq=state.seq,
-                    player_id=player_id,
-                    payload={
-                        "x": player.x,
-                        "y": player.y,
-                        "map": state.get_map_snapshot(),
-                    },
-                )
-                writer.write(encode(resp))
-                await writer.drain()
-
-            elif player_id:
-                resp = handle_message(state, msg)
-                if resp:
-                    writer.write(encode(resp))
-                    await writer.drain()
+            msg = serializer.decode(data.rstrip(b'\n'))
+            msg = Message(type=msg.type, seq=msg.seq, player_id=conn.player_id or msg.player_id, payload=msg.payload)
+            resp = world.handle_message(msg)
+            if resp:
+                if resp.player_id and not conn.player_id:
+                    conn.player_id = resp.player_id
+                    log.info(f"Player {conn.player_id} joined from {conn.addr}")
+                resp = Message(type=resp.type, seq=resp.seq, player_id=conn.player_id, payload=resp.payload)
+                clients[:] = await broadcast(clients, resp)
     except Exception as e:
-        print(f"[server] Error: {e}")
+        log.error(f"Error: {e}\n{traceback.format_exc()}")
     finally:
-        if player_id:
-            state.remove_player(player_id)
-        writer.close()
-        await writer.wait_closed()
-        print(f"[server] Client disconnected: {addr}")
+        if conn.player_id:
+            world.remove_entity(conn.player_id)
+        clients.remove(conn)
+        conn.writer.close()
+        await conn.writer.wait_closed()
 
-async def main(port: int = 8765):
-    state = GameState()
-    server = await asyncio.start_server(
-        lambda r, w: handle_client(r, w, state), "0.0.0.0", port
-    )
-    print(f"[server] Listening on port {port}")
+async def main(port: int = 8765, serializer: Serializer | None = None):
+    if serializer is None:
+        from shared.serializers import JsonSerializer
+        serializer = JsonSerializer()
+    cfg = load_server_config()
+    port = port or cfg.port
+    world = GameWorld()
+    world.register_system(MovementController(max_speed_tiles_per_sec=cfg.player_max_speed_tiles_per_sec))
+    clients: list[ClientConnection] = []
+    async def handler(reader, writer):
+        await handle_client(reader, writer, world, clients, serializer)
+    server = await asyncio.start_server(handler, "0.0.0.0", port)
+    log.info(f"Listening on port {port}")
     async with server:
         await server.serve_forever()
 
@@ -349,58 +542,22 @@ if __name__ == "__main__":
     asyncio.run(main(args.port))
 ```
 
-Note: Server sends `joined` (with map) in one message — client doesn't need separate `map_sync`. State sync is sent on every move. For multi-client, broadcast added in future iteration.
-
-- [ ] **Step 2: Commit**
-
-```bash
-git add server/main.py
-git commit -m "feat(server): add TCP async server with client handling"
-```
+- [ ] **Step 8: Commit**
 
 ---
 
-## Task 4: Client - Config and Shared Protocol
+## Task 3: Client
 
 **Files:**
-- Create: `config/client.yaml`
-- Create: `config/server.yaml`
 - Create: `client/__init__.py`
+- Create: `client/main.py`
 - Create: `client/config.py`
+- Create: `client/renderer.py`
+- Create: `client/input_handler.py`
+- Create: `client/network.py`
+- Create: `client/state.py`
 
-- [ ] **Step 1: Create config/client.yaml**
-
-```yaml
-server:
-  host: "127.0.0.1"
-  port: 8765
-
-controls:
-  up: "KEY_UP"
-  down: "KEY_DOWN"
-  left: "KEY_LEFT"
-  right: "KEY_RIGHT"
-  quit: "q"
-
-render:
-  fps: 30
-```
-
-Note: Key names match curses constants (`getattr(curses, name)`). Config drives all keybindings.
-
-- [ ] **Step 2: Create config/server.yaml**
-
-```yaml
-server:
-  port: 8765
-  tick_rate: 60
-
-map:
-  width: 40
-  height: 20
-```
-
-- [ ] **Step 3: Create client/config.py**
+- [ ] **Step 1: Create client/config.py**
 
 ```python
 # client/config.py
@@ -414,75 +571,67 @@ def load_client_config(path: str = "config/client.yaml") -> dict:
         return yaml.safe_load(f)
 
 def resolve_controls(controls: dict) -> dict:
-    """Resolve YAML string keys (e.g. "KEY_UP") to integer curses codes."""
+    """Resolve YAML string keys to integer curses codes."""
     resolved = {}
     for action, key_name in controls.items():
         if isinstance(key_name, str) and hasattr(curses, key_name):
             resolved[action] = getattr(curses, key_name)
+        elif isinstance(key_name, str):
+            stripped = key_name.strip("'\"")
+            if len(stripped) == 1:
+                resolved[action] = ord(stripped)
+            else:
+                resolved[action] = key_name
         else:
             resolved[action] = key_name
     return resolved
 ```
 
-Remove `client/protocol.py` — import directly from `shared.protocol`.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add config/ client/
-git commit -m "feat: add config yaml and client config loader"
-```
-
----
-
-## Task 5: Client - Network Layer
-
-**Files:**
-- Create: `client/network.py`
-
-- [ ] **Step 1: Create client/network.py**
+- [ ] **Step 2: Create client/network.py**
 
 ```python
 # client/network.py
 import asyncio
-from shared.protocol import encode, decode, Message
+from shared.protocol import Message
+from shared.serializers import Serializer
+from shared.logging import setup_logger
+
+log = setup_logger("network", "client.log", console=False)
 
 class NetworkClient:
-    def __init__(self, host: str, port: int):
+    def __init__(self, host: str, port: int, serializer: Serializer | None = None):
         self.host = host
         self.port = port
+        self.serializer = serializer or JsonSerializer()
         self.reader = None
         self.writer = None
-        self.player_id: str = ""
         self.incoming: asyncio.Queue[Message] = asyncio.Queue()
         self._running = False
 
     async def connect(self) -> bool:
         try:
-            self.reader, self.writer = await asyncio.open_connection(
-                self.host, self.port
-            )
+            self.reader, self.writer = await asyncio.open_connection(self.host, self.port)
             self._running = True
             return True
         except Exception as e:
-            print(f"[network] Connection failed: {e}")
+            log.error(f"Connection failed: {e}")
             return False
 
     async def send(self, msg: Message):
         if self.writer:
-            self.writer.write(encode(msg))
+            self.writer.write(self.serializer.encode(msg) + b'\n')
             await self.writer.drain()
 
     async def receive_loop(self):
         while self._running:
             try:
-                data = await self.reader.read(1024)
+                data = await self.reader.readline()
                 if not data:
                     break
-                msg = decode(data)
+                msg = self.serializer.decode(data.rstrip(b'\n'))
                 await self.incoming.put(msg)
             except Exception as e:
-                print(f"[network] Receive error: {e}")
+                log.error(f"Receive error: {e}")
                 break
 
     async def disconnect(self):
@@ -492,21 +641,7 @@ class NetworkClient:
             await self.writer.wait_closed()
 ```
 
-- [ ] **Step 2: Commit**
-
-```bash
-git add client/network.py
-git commit -m "feat(client): add async TCP network client"
-```
-
----
-
-## Task 6: Client - Game State
-
-**Files:**
-- Create: `client/state.py`
-
-- [ ] **Step 1: Create client/state.py**
+- [ ] **Step 3: Create client/state.py**
 
 ```python
 # client/state.py
@@ -521,13 +656,11 @@ class ClientGameState:
         self.my_player_id: str = ""
         self.server_seq: int = 0
 
-    def apply_map_sync(self, payload: dict):
-        self.map_width = payload["width"]
-        self.map_height = payload["height"]
-        self.map = [row[:] for row in payload["tiles"]]
-
     def apply_state_sync(self, payload: dict):
         self.server_seq = payload["seq"]
+        self.map_width = payload.get("map", {}).get("width", 0)
+        self.map_height = payload.get("map", {}).get("height", 0)
+        self.map = [row[:] for row in payload.get("map", {}).get("tiles", [])]
         self.player_positions = {
             pid: (data["x"], data["y"])
             for pid, data in payload.get("players", {}).items()
@@ -540,21 +673,7 @@ class ClientGameState:
         return self.player_positions.get(self.my_player_id)
 ```
 
-- [ ] **Step 2: Commit**
-
-```bash
-git add client/state.py
-git commit -m "feat(client): add client-side game state"
-```
-
----
-
-## Task 7: Client - Input Handler
-
-**Files:**
-- Create: `client/input_handler.py`
-
-- [ ] **Step 1: Create client/input_handler.py**
+- [ ] **Step 4: Create client/input_handler.py**
 
 ```python
 # client/input_handler.py
@@ -562,7 +681,6 @@ from shared.constants import DIRS
 
 class InputHandler:
     def __init__(self, resolved_controls: dict):
-        # resolved_controls: {action: curses_key_int}
         self.key_to_dir = {}
         for action, key in resolved_controls.items():
             if action in DIRS:
@@ -575,21 +693,7 @@ class InputHandler:
         return DIRS.get(direction, (0, 0))
 ```
 
-- [ ] **Step 2: Commit**
-
-```bash
-git add client/input_handler.py
-git commit -m "feat(client): add input handler with keybinding support"
-```
-
----
-
-## Task 8: Client - ASCII Renderer
-
-**Files:**
-- Create: `client/renderer.py`
-
-- [ ] **Step 1: Create client/renderer.py**
+- [ ] **Step 5: Create client/renderer.py**
 
 ```python
 # client/renderer.py
@@ -606,103 +710,69 @@ class RoguelikeRenderer:
 
     def render(self, state: ClientGameState):
         self.stdscr.clear()
-
-        # Draw map
         for y, row in enumerate(state.map):
             for x, tile in enumerate(row):
                 char = tile if tile != TILE_EMPTY else "."
                 self.stdscr.addch(y, x, char)
-
-        # Draw players (overwrite map tiles)
         for pid, (x, y) in state.player_positions.items():
             char = TILE_PLAYER if pid == state.my_player_id else "P"
             self.stdscr.addch(y, x, char)
-
-        # Status line
         my_pos = state.get_my_position()
         status = f"Player: {state.my_player_id} | Pos: {my_pos} | Seq: {state.server_seq}"
         self.stdscr.addstr(state.map_height + 1, 0, status)
-
         self.stdscr.refresh()
 
     def get_key(self):
         return self.stdscr.getch()
 ```
 
-- [ ] **Step 2: Commit**
-
-```bash
-git add client/renderer.py
-git commit -m "feat(client): add curses-based roguelike renderer"
-```
-
----
-
-## Task 9: Client - Main Loop
-
-**Files:**
-- Create: `client/main.py`
-
-- [ ] **Step 1: Create client/main.py**
+- [ ] **Step 6: Create client/main.py**
 
 ```python
 # client/main.py
 import asyncio
-import argparse
 import curses
-from client.config import load_client_config, resolve_controls
+from client.config import resolve_controls
 from client.network import NetworkClient
 from client.state import ClientGameState
 from client.input_handler import InputHandler
 from client.renderer import RoguelikeRenderer
 from shared.protocol import Message
-from shared.constants import MSG_JOIN, MSG_MOVE, MSG_LEAVE
+from shared.constants import MsgType
+from shared.logging import setup_logger
+from shared.serializers import JsonSerializer
 
-async def main(stdscr):
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
-    args = parser.parse_args()
+log = setup_logger("client", "client.log", console=False)
 
-    config = load_client_config()
+async def main(stdscr, config):
+    stdscr.keypad(True)
     state = ClientGameState()
-    network = NetworkClient(args.host, args.port)
+    network = NetworkClient(config.host, config.port, JsonSerializer())
     renderer = RoguelikeRenderer(stdscr)
-    controls = resolve_controls(config.get("controls", {}))
+    controls = resolve_controls(config.controls)
     input_handler = InputHandler(controls)
     quit_key = controls.get("quit", ord('q'))
 
     if not await network.connect():
         return
-
-    # Send join
-    join_msg = Message(type=MSG_JOIN, player_id="")
-    await network.send(join_msg)
-
-    # Start receive loop
+    await network.send(Message(type=MsgType.JOIN, player_id=""))
     receive_task = asyncio.create_task(network.receive_loop())
 
     running = True
     while running:
-        # Process network messages
-        try:
-            while not network.incoming.empty():
-                msg = await network.incoming.get()
-                if msg.type == "joined":
-                    state.set_player_id(msg.player_id)
-                    network.player_id = msg.player_id
-                    state.apply_map_sync(msg.payload["map"])
-                elif msg.type == "state_sync":
+        await asyncio.sleep(0)
+        while True:
+            try:
+                msg = network.incoming.get_nowait()
+                if msg.type == MsgType.STATE_SYNC:
                     state.apply_state_sync(msg.payload)
-        except asyncio.QueueEmpty:
-            pass
-
-        # Render
+                    if not state.my_player_id and msg.player_id:
+                        state.set_player_id(msg.player_id)
+            except asyncio.QueueEmpty:
+                break
         if state.map:
             renderer.render(state)
-
-        # Input
-        curses.napms(33)  # ~30fps
+        curses.napms(16)
         key = renderer.get_key()
         if key != -1:
             if key == quit_key:
@@ -710,136 +780,261 @@ async def main(stdscr):
             elif key in input_handler.key_to_dir:
                 direction = input_handler.key_to_dir[key]
                 dx, dy = input_handler.get_move_delta(direction)
-                move_msg = Message(
-                    type=MSG_MOVE,
-                    seq=state.server_seq,
-                    player_id=network.player_id,
-                    payload={"dx": dx, "dy": dy},
-                )
-                await network.send(move_msg)
+                await network.send(Message(type=MsgType.MOVE, seq=state.server_seq, player_id=state.my_player_id, payload={"dx": dx, "dy": dy}))
 
     receive_task.cancel()
-    leave_msg = Message(type=MSG_LEAVE, player_id=network.player_id)
-    await network.send(leave_msg)
     await network.disconnect()
 
 if __name__ == "__main__":
-    curses.wrapper(lambda stdscr: asyncio.run(main(stdscr)))
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    args = parser.parse_args()
+    from shared.config import load_client_config
+    cfg = load_client_config()
+    cfg.host = args.host
+    cfg.port = args.port
+    curses.wrapper(lambda stdscr: asyncio.run(main(stdscr, cfg)))
 ```
 
-- [ ] **Step 2: Commit**
-
-```bash
-git add client/main.py
-git commit -m "feat(client): add main game loop with async networking"
-```
+- [ ] **Step 7: Commit**
 
 ---
 
-## Task 10: SPEC.md - Living Specification
+## Task 4: Config and Launcher
 
 **Files:**
-- Create: `SPEC.md`
+- Create: `config/client.yaml`
+- Create: `config/server.yaml`
+- Create: `shared/config.py`
+- Create: `run.py`
+- Create: `requirements.txt`
 
-- [ ] **Step 1: Create SPEC.md**
+- [ ] **Step 1: Create shared/config.py**
 
-```markdown
-# CLI Roguelike Game - Specification
+```python
+# shared/config.py
+import yaml
+import logging
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
-## Overview
-Multiplayer roguelike game with CLI interface. Source Engine-style architecture:
-client sends player actions, server broadcasts authoritative state.
-Client renders roguelike ASCII map.
+log = logging.getLogger(__name__)
 
-## Architecture
+CURRENT_VERSION = 1
 
-### Source Engine Parallels
-| Source Engine | This Project |
-|---------------|--------------|
-| Client predicts player movement | Future: client applies move immediately, rolls back on server correction |
-| Server is authoritative | Server validates all moves, broadcasts state |
-| cl_delta | Delta-state messages (seq numbers) |
-| Client hooks (CHud*) | Client render hooks on state change |
+@dataclass
+class ServerConfig:
+    port: int = 8765
+    tick_rate: int = 60
+    player_max_speed_tiles_per_sec: float = 10.0
+    map_width: int = 40
+    map_height: int = 20
 
-### Current Phase (Prototype)
-- Client sends `move` action → server validates → server broadcasts `state_sync`
-- Client has no prediction yet — renders server state directly
-- Future: prediction/rollback will use `seq` for conflict detection
+@dataclass
+class ClientConfig:
+    host: str = "127.0.0.1"
+    port: int = 8765
+    controls: dict[str, Any] = field(default_factory=dict)
+    fps: int = 30
 
-### Future Phase (Prediction)
-- Client applies local move immediately (optimistic)
-- Server sends `state_sync` with authoritative seq
-- If server seq > local seq: roll back local prediction, apply server state
-- Input buffer: store unacknowledged moves, replay on rollback
+def _migrate(data: dict, path: Path) -> dict:
+    version = data.get("version", 0)
+    if version == 0:
+        data["version"] = 1
+        with open(path, "w") as f:
+            yaml.dump(data, f, default_flow_style=False)
+        log.info(f"Migrated config from v0 to v1: {path}")
+    return data
 
-## Protocol
+def load_server_config(path: str = "config/server.yaml") -> ServerConfig:
+    full_path = Path(__file__).parent.parent / path
+    if not full_path.exists():
+        return ServerConfig()
+    with open(full_path) as f:
+        data = yaml.safe_load(f) or {}
+    data = _migrate(data, full_path)
+    s = data.get("server", {})
+    p = data.get("player", {})
+    m = data.get("map", {})
+    return ServerConfig(
+        port=s.get("port", 8765),
+        tick_rate=s.get("tick_rate", 60),
+        player_max_speed_tiles_per_sec=p.get("max_speed_tiles_per_sec", 10.0),
+        map_width=m.get("width", 40),
+        map_height=m.get("height", 20),
+    )
 
-### Message Types
-| Type | Direction | Description |
-|------|----------|-------------|
-| `join` | C→S | Player requests to join |
-| `joined` | S→C | Server confirms with player_id, spawn pos, and full map |
-| `move` | C→S | Player movement request with delta |
-| `state_sync` | S→C | Authoritative state broadcast (seq, all player positions) |
-| `leave` | C→S | Player disconnects |
-
-### State Sync Format
-```json
-{
-  "type": "state_sync",
-  "seq": 42,
-  "payload": {
-    "players": {
-      "player_id": {"x": 5, "y": 10}
-    }
-  }
-}
+def load_client_config(path: str = "config/client.yaml") -> ClientConfig:
+    full_path = Path(__file__).parent.parent / path
+    if not full_path.exists():
+        return ClientConfig()
+    with open(full_path) as f:
+        data = yaml.safe_load(f) or {}
+    data = _migrate(data, full_path)
+    s = data.get("server", {})
+    ctrl = data.get("controls", {})
+    r = data.get("render", {})
+    return ClientConfig(host=s.get("host", "127.0.0.1"), port=s.get("port", 8765), controls=ctrl, fps=r.get("fps", 30))
 ```
 
-## Config
+- [ ] **Step 2: Create config/client.yaml**
 
-### client.yaml
-- `server.host`, `server.port` — connection
-- `controls` — keybinding map (action → key name)
-- `render.fps` — target render rate
-
-### server.yaml
-- `server.port` — listen port
-- `server.tick_rate` — game tick rate (future)
-- `map.width`, `map.height` — map dimensions
-
-## Project Structure
-```
-client/       — rendering, input, network (stateless render from server state)
-server/       — authoritative game state, player management, map, message handlers
-shared/       — protocol messages, constants (single source of truth, no duplicates)
-config/       — YAML configs (server address, controls, map size)
+```yaml
+version: 1
+server:
+  host: 127.0.0.1
+  port: 8765
+controls:
+  up: w
+  down: s
+  left: a
+  right: d
+  quit: q
+render:
+  fps: 30
 ```
 
-## Extensibility Points
-1. **Prediction/Rollback** — use `seq` in state_sync to detect desync, replay input buffer
-2. **Tile entities** — extend `TILE_*` constants, add to map renderer
-3. **Server tick rate** — server.yaml tick_rate, client interpolation
-4. **Entity system** — Player class becomes Entity, add components
-5. **Map format** — load from file (future: procedural generation)
-6. **Networking** — switch TCP → WebSocket for HTTP gateway compatibility
+- [ ] **Step 3: Create config/server.yaml**
+
+```yaml
+version: 1
+server:
+  port: 8765
+  tick_rate: 60
+player:
+  max_speed_tiles_per_sec: 10.0
+map:
+  width: 40
+  height: 20
 ```
+
+- [ ] **Step 4: Create run.py**
+
+```python
+#!/usr/bin/env python3
+"""Auto-updating launcher."""
+import asyncio
+import subprocess
+import sys
+import argparse
+from pathlib import Path
+
+def check_for_updates():
+    repo = Path(__file__).parent
+    if not (repo / ".git").exists():
+        return False
+    subprocess.run(["git", "fetch"], cwd=repo, capture_output=True)
+    result = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD..origin/master"],
+        cwd=repo, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return False
+    try:
+        return int(result.stdout.strip()) > 0
+    except ValueError:
+        return False
+
+def update():
+    repo = Path(__file__).parent
+    configs = {}
+    for f in ["config/server.yaml", "config/client.yaml"]:
+        p = repo / f
+        if p.exists():
+            configs[f] = p.read_bytes()
+    result = subprocess.run(["git", "pull"], cwd=repo, capture_output=True, text=True)
+    if result.returncode != 0:
+        for f, data in configs.items():
+            (repo / f).write_bytes(data)
+    if result.stdout.strip():
+        print(result.stdout.rstrip())
+
+def ask_update() -> bool:
+    print("Updates available. Update? [Y/n]", end=" ")
+    try:
+        return input().strip().lower() in ("", "y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        return False
+
+def main():
+    parser = argparse.ArgumentParser(description="Roguelike game launcher")
+    subparsers = parser.add_subparsers(dest="mode", help="Launch mode")
+    client_parser = subparsers.add_parser("client", help="Launch client")
+    client_parser.add_argument("--host", default="127.0.0.1")
+    client_parser.add_argument("--port", type=int, default=8765)
+    server_parser = subparsers.add_parser("server", help="Launch server")
+    server_parser.add_argument("--port", type=int, default=8765)
+    args, _ = parser.parse_known_args()
+    if args.mode is None:
+        args.mode = "client"
+    if check_for_updates():
+        if ask_update():
+            update()
+        else:
+            print("Skipping update, launching with current version...")
+    if args.mode == "server":
+        sys.argv = ["server"]
+        if args.port != 8765:
+            sys.argv.extend(["--port", str(args.port)])
+        from server.main import main as server_main
+        asyncio.run(server_main())
+    else:
+        from shared.config import load_client_config
+        cfg = load_client_config()
+        cfg.host = args.host
+        cfg.port = args.port
+        from client.main import main as client_main
+        import curses
+        def run(stdscr):
+            asyncio.run(client_main(stdscr, cfg))
+        curses.wrapper(run)
+
+if __name__ == "__main__":
+    main()
+```
+
+- [ ] **Step 5: Create requirements.txt**
+
+```
+pyyaml
+```
+
+- [ ] **Step 6: Commit**
+
+---
+
+## Task 5: Tests
+
+**Files:**
+- Create: `tests/__init__.py`
+- Create: `tests/test_client.py`
+- Create: `tests/test_server.py`
+- Create: `tests/test_shared.py`
+- Create: `tests/test_config.py`
+- Create: `tests/test_ecs.py`
+
+- [ ] **Step 1: Create tests**
+
+Test ECS: Entity, Component, System, GameWorld, MovementController.
+Test protocol: Message encode/decode roundtrip.
+Test config: load_server_config, load_client_config.
+Test client: state, input_handler.
 
 - [ ] **Step 2: Commit**
-
-```bash
-git add SPEC.md
-git commit -m "docs: add SPEC.md architecture specification"
-```
 
 ---
 
 ## Self-Review Checklist
 
-- [ ] All 10 tasks have code, no TODOs/TBDs
+- [ ] All tasks have code, no TODOs/TBDs
 - [ ] Every task has a commit step
 - [ ] `shared/protocol.py` used by both client and server (single source of truth)
 - [ ] Architecture supports prediction/rollback via `seq` field — not implemented yet, but hook is there
 - [ ] Config in YAML, keybindings loaded at runtime
 - [ ] Client renders from server state (no local simulation in prototype)
-- [ ] Type consistency: `Message.to_dict()` / `Message.from_dict()` symmetric, `DIRS` dict used in both input_handler and player.move
+- [ ] ECS architecture: Systems are pluggable, registered at startup
+- [ ] MovementController blocks excessive speed via `on_before_move` hook
+- [ ] run.py preserves local configs on git pull conflict
