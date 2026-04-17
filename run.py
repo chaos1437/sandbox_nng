@@ -73,8 +73,8 @@ def main():
     if args.mode is None:
         args.mode = "client"
 
-    # Check for updates BEFORE curses for client
-    if args.mode == "client" and check_for_updates():
+    # Check for updates before launching either mode
+    if check_for_updates():
         if ask_update():
             update()
         else:
