@@ -33,7 +33,7 @@ async def main(stdscr):
     log.info(f"Connected to {args.host}:{args.port}")
 
     # Send join
-    join_msg = Message(type=MSG_JOIN, player_id="")
+    join_msg = Message(type=MsgType.JOIN, player_id="")
     await network.send(join_msg)
     log.debug("Join request sent")
 
@@ -74,7 +74,7 @@ async def main(stdscr):
                 dx, dy = input_handler.get_move_delta(direction)
                 log.debug(f"Move: {direction} ({dx},{dy})")
                 move_msg = Message(
-                    type=MSG_MOVE,
+                    type=MsgType.MOVE,
                     seq=state.server_seq,
                     player_id=state.my_player_id,
                     payload={"dx": dx, "dy": dy},
@@ -86,7 +86,7 @@ async def main(stdscr):
         await receive_task
     except asyncio.CancelledError:
         pass
-    leave_msg = Message(type=MSG_LEAVE, player_id=state.my_player_id)
+    leave_msg = Message(type=MsgType.LEAVE, player_id=state.my_player_id)
     await network.send(leave_msg)
     await network.disconnect()
 
