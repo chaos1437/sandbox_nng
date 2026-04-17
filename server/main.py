@@ -10,10 +10,35 @@ from shared.logging import setup_logger
 
 log = setup_logger("server", "server.log")
 
-async def handle_client(reader, writer, state):
+
+class ClientConnection:
+    def __init__(self, reader, writer, state):
+        self.reader = reader
+        self.writer = writer
+        self.state = state
+        self.player_id: str | None = None
+        self.addr = writer.get_extra_info("peername")
+
+
+async def broadcast(clients: list[ClientConnection], msg: Message):
+    """Send message to all connected clients."""
+    data = encode(msg) + b'\n'
+    dead = []
+    for client in clients:
+        try:
+            client.writer.write(data)
+            await client.writer.drain()
+        except Exception:
+            dead.append(client)
+    for client in dead:
+        clients.remove(client)
+
+
+async def handle_client(reader, writer, state, clients: list[ClientConnection]):
     addr = writer.get_extra_info("peername")
     log.info(f"Client connected: {addr}")
-    player_id = None
+    conn = ClientConnection(reader, writer, state)
+    clients.append(conn)
 
     try:
         while True:
@@ -23,30 +48,33 @@ async def handle_client(reader, writer, state):
             msg = decode(data.rstrip(b'\n'))
             log.info(f"Received: {msg.type} from {msg.player_id}")
 
-            if msg.type == MSG_JOIN:
-                player_id = msg.player_id
-
-            resp = handle_message(state, msg)
+            resp = handle_message(conn.state, msg)
             if resp:
-                if resp.type == MSG_STATE_SYNC and not player_id:
-                    player_id = resp.player_id
-                writer.write(encode(resp) + b'\n')
-                await writer.drain()
-                log.info(f"Sent {resp.type} to {resp.player_id}")
+                if resp.type == MSG_STATE_SYNC and not conn.player_id:
+                    conn.player_id = resp.player_id
+                    log.info(f"Player {conn.player_id} joined from {addr}")
+                # Broadcast state to ALL clients
+                await broadcast(clients, resp)
+                log.info(f"Broadcast {resp.type} to {len(clients)} clients")
     except Exception as e:
         log.error(f"Error: {e}\n{traceback.format_exc()}")
     finally:
-        if player_id:
-            state.remove_player(player_id)
+        if conn.player_id:
+            conn.state.remove_player(conn.player_id)
+        clients.remove(conn)
         writer.close()
         await writer.wait_closed()
         log.info(f"Client disconnected: {addr}")
 
+
 async def main(port: int = 8765):
     state = GameState()
-    server = await asyncio.start_server(
-        lambda r, w: handle_client(r, w, state), "0.0.0.0", port
-    )
+    clients: list[ClientConnection] = []
+
+    async def handler(reader, writer):
+        await handle_client(reader, writer, state, clients)
+
+    server = await asyncio.start_server(handler, "0.0.0.0", port)
     log.info(f"Listening on port {port}")
     async with server:
         await server.serve_forever()
