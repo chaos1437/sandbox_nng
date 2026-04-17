@@ -1,10 +1,11 @@
 # server/main.py
 import asyncio
+import traceback
 import argparse
 from server.game_state import GameState
 from server.handlers import handle_message
 from shared.protocol import encode, decode, Message
-from shared.constants import MSG_JOIN, MSG_LEAVE
+from shared.constants import MSG_JOIN, MSG_LEAVE, MSG_STATE_SYNC
 from shared.logging import setup_logger
 
 log = setup_logger("server", "server.log")
@@ -33,7 +34,7 @@ async def handle_client(reader, writer, state):
                 await writer.drain()
                 log.info(f"Sent {resp.type} to {resp.player_id}")
     except Exception as e:
-        log.error(f"Error: {e}")
+        log.error(f"Error: {e}\n{traceback.format_exc()}")
     finally:
         if player_id:
             state.remove_player(player_id)
