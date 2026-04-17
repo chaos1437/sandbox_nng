@@ -36,18 +36,18 @@ async def main(stdscr):
 
     running = True
     while running:
-        # Process network messages
-        try:
-            while not network.incoming.empty():
-                msg = await network.incoming.get()
+        # Process network messages (drain without blocking)
+        while True:
+            try:
+                msg = network.incoming.get_nowait()
                 if msg.type == "joined":
                     state.set_player_id(msg.player_id)
                     network.player_id = msg.player_id
                     state.apply_map_sync(msg.payload["map"])
                 elif msg.type == "state_sync":
                     state.apply_state_sync(msg.payload)
-        except asyncio.QueueEmpty:
-            pass
+            except asyncio.QueueEmpty:
+                break
 
         # Render
         if state.map:
@@ -71,6 +71,10 @@ async def main(stdscr):
                 await network.send(move_msg)
 
     receive_task.cancel()
+    try:
+        await receive_task
+    except asyncio.CancelledError:
+        pass
     leave_msg = Message(type=MSG_LEAVE, player_id=network.player_id)
     await network.send(leave_msg)
     await network.disconnect()
