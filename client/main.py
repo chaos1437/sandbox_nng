@@ -63,6 +63,7 @@ async def main(stdscr):
             renderer.render(state)
 
         # Input
+        curses.napms(16)  # ~60fps cap, prevents 100% CPU spin
         key = renderer.get_key()
         if key != -1:
             log.debug(f"Key pressed: {key} (quit={quit_key})")
