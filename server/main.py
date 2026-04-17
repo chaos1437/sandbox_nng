@@ -74,7 +74,7 @@ async def handle_client(
                     player_id=conn.player_id,
                     payload=resp.payload,
                 )
-                clients[:] = await broadcast(clients, resp)
+                clients = await broadcast(clients, resp)
                 log.info(f"Broadcast {resp.type} to {len(clients)} clients")
     except Exception as e:
         log.error(f"Error: {e}\n{traceback.format_exc()}")

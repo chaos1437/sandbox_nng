@@ -22,7 +22,6 @@ class Message:
     @classmethod
     def from_dict(cls, d: dict) -> "Message":
         raw_type = d["type"]
-        # Normalize string to MsgType enum if matches
         try:
             msg_type = MsgType(raw_type)
         except ValueError:
@@ -33,11 +32,3 @@ class Message:
             player_id=d.get("player_id", ""),
             payload=d.get("payload", {}),
         )
-
-
-def encode(msg: Message) -> bytes:
-    return json.dumps(msg.to_dict()).encode("utf-8")
-
-
-def decode(data: bytes) -> Message:
-    return Message.from_dict(json.loads(data.decode("utf-8")))

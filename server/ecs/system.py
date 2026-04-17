@@ -11,7 +11,7 @@ class System(ABC):
     """
 
     def __init__(self) -> None:
-        raise NotImplementedError("System is abstract")
+        pass
 
     def on_player_join(self, world: "World", player_id: str) -> None:
         """Called when a player joins the game."""

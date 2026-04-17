@@ -1,6 +1,7 @@
 # tests/test_shared.py
 import pytest
-from shared.protocol import Message, encode, decode
+from shared.protocol import Message
+from shared import encode, decode
 from shared.constants import DIRS, TILE_EMPTY, TILE_WALL, TILE_PLAYER
 
 

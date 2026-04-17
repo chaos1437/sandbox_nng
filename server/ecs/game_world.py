@@ -10,6 +10,12 @@ from shared.constants import MsgType
 
 _SHORT_ID_LEN = 8
 
+_HANDLERS = {
+    MsgType.JOIN: lambda w, m: w._handle_join(m),
+    MsgType.MOVE: lambda w, m: w._handle_move(m),
+    MsgType.LEAVE: lambda w, m: w._handle_leave(m),
+}
+
 
 class GameWorld:
     """Game world holding entities, systems, and the game map."""
@@ -38,12 +44,9 @@ class GameWorld:
 
     def handle_message(self, msg: Message) -> Optional[Message]:
         """Handle a message and return a response Message or None."""
-        if msg.type == MsgType.JOIN:
-            return self._handle_join(msg)
-        elif msg.type == MsgType.MOVE:
-            return self._handle_move(msg)
-        elif msg.type == MsgType.LEAVE:
-            return self._handle_leave(msg)
+        handler = _HANDLERS.get(msg.type)
+        if handler:
+            return handler(self, msg)
         return None
 
     def _handle_join(self, msg: Message) -> Message:
@@ -90,9 +93,8 @@ class GameWorld:
                 nx = pos.x + dx
                 ny = pos.y + dy
                 if self.map.is_passable(nx, ny):
-                    # Replace position component with new values
-                    entity.remove_component(PositionComponent)
-                    entity.add_component(PositionComponent(x=nx, y=ny))
+                    pos.x = nx
+                    pos.y = ny
 
         # Notify systems after move
         for system in self.systems:

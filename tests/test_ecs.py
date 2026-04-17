@@ -67,9 +67,7 @@ class TestPositionComponent:
 
 
 class TestSystem:
-    def test_system_raises_notimplementederror_on_init(self):
-        with pytest.raises(NotImplementedError):
-            System()
+    pass
 
 
 class TestMovementController:
