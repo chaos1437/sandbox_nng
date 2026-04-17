@@ -62,10 +62,10 @@ class GameWorld:
         self.add_entity(entity)
 
         self.seq += 1
-        return self._make_state_sync(include_map=True)
+        return self._make_state_sync(include_map=True, player_id=player_id)
 
-    def _make_state_sync(self, include_map: bool = False) -> Message:
-        return Message(type=MsgType.STATE_SYNC, seq=self.seq, payload=self.get_state_snapshot(include_map))
+    def _make_state_sync(self, include_map: bool = False, player_id: str = "") -> Message:
+        return Message(type=MsgType.STATE_SYNC, seq=self.seq, player_id=player_id, payload=self.get_state_snapshot(include_map))
 
     def _handle_move(self, msg: Message) -> Message:
         """Handle a MOVE message."""

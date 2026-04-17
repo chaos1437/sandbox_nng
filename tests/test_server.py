@@ -2,7 +2,7 @@
 import pytest
 from server.map import GameMap
 from server.game_state import GameState
-from server.handlers import handle_message
+from server.ecs.game_world import GameWorld
 from server.ecs.entity import Entity
 from server.ecs.component import PositionComponent
 from shared.protocol import Message
@@ -113,37 +113,44 @@ class TestGameState:
         assert "tiles" in snap["map"]
 
 
-class TestHandlers:
+class TestGameWorld:
     def test_join_creates_player_returns_state_sync(self):
-        s = GameState()
+        world = GameWorld()
         msg = Message(type=MsgType.JOIN)
-        resp = handle_message(s, msg)
+        resp = world.handle_message(msg)
         assert resp is not None
         assert resp.type == MsgType.STATE_SYNC
-        assert resp.player_id in s.entities
+        assert resp.player_id in world.entities
 
     def test_move_updates_position_returns_state_sync(self):
-        s = GameState()
-        p = s.add_player("p1")
-        pos = p.get_component(PositionComponent)
-        old_x = pos.x
+        world = GameWorld()
+        # Pre-add a player entity
+        e = Entity("p1")
+        spawn_x = world.map.width // 2
+        spawn_y = world.map.height // 2
+        e.add_component(PositionComponent(x=spawn_x, y=spawn_y))
+        world.add_entity(e)
+        old_x = spawn_x
         msg = Message(type=MsgType.MOVE, player_id="p1", payload={"dx": 2, "dy": 0})
-        resp = handle_message(s, msg)
+        resp = world.handle_message(msg)
         assert resp is not None
         assert resp.type == MsgType.STATE_SYNC
-        assert p.get_component(PositionComponent).x == old_x + 2
+        assert e.get_component(PositionComponent).x == old_x + 2
 
     def test_leave_removes_player(self):
-        s = GameState()
-        p = s.add_player("p1")
+        world = GameWorld()
+        # Pre-add a player entity
+        e = Entity("p1")
+        e.add_component(PositionComponent(x=2, y=2))
+        world.add_entity(e)
         msg = Message(type=MsgType.LEAVE, player_id="p1")
-        resp = handle_message(s, msg)
+        resp = world.handle_message(msg)
         assert resp is None
-        assert "p1" not in s.entities
+        assert "p1" not in world.entities
 
     def test_move_unknown_player_returns_state_sync(self):
-        s = GameState()
+        world = GameWorld()
         msg = Message(type=MsgType.MOVE, player_id="unknown", payload={"dx": 1, "dy": 0})
-        resp = handle_message(s, msg)
+        resp = world.handle_message(msg)
         assert resp is not None
         assert resp.type == MsgType.STATE_SYNC
