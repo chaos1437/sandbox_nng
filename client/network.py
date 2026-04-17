@@ -1,6 +1,9 @@
 # client/network.py
 import asyncio
 from shared.protocol import encode, decode, Message
+from shared.logging import setup_logger
+
+log = setup_logger("network", "client.log")
 
 class NetworkClient:
     def __init__(self, host: str, port: int):
@@ -20,7 +23,7 @@ class NetworkClient:
             self._running = True
             return True
         except Exception as e:
-            print(f"[network] Connection failed: {e}")
+            log.error(f"Connection failed: {e}")
             return False
 
     async def send(self, msg: Message):
@@ -37,7 +40,7 @@ class NetworkClient:
                 msg = decode(data)
                 await self.incoming.put(msg)
             except Exception as e:
-                print(f"[network] Receive error: {e}")
+                log.error(f"Receive error: {e}")
                 break
 
     async def disconnect(self):

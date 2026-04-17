@@ -9,6 +9,9 @@ from client.input_handler import InputHandler
 from client.renderer import RoguelikeRenderer
 from shared.protocol import Message
 from shared.constants import MSG_JOIN, MSG_MOVE, MSG_LEAVE
+from shared.logging import setup_logger
+
+log = setup_logger("client", "client.log")
 
 async def main(stdscr):
     parser = argparse.ArgumentParser()
@@ -26,24 +29,31 @@ async def main(stdscr):
 
     if not await network.connect():
         return
+    log.info(f"Connected to {args.host}:{args.port}")
 
     # Send join
     join_msg = Message(type=MSG_JOIN, player_id="")
     await network.send(join_msg)
+    log.debug("Join request sent")
 
     # Start receive loop
     receive_task = asyncio.create_task(network.receive_loop())
 
     running = True
     while running:
+        # Yield to receive_loop so it can fill the queue
+        await asyncio.sleep(0)
+
         # Process network messages (drain without blocking)
         while True:
             try:
                 msg = network.incoming.get_nowait()
+                log.debug(f"Received: {msg.type}")
                 if msg.type == "joined":
                     state.set_player_id(msg.player_id)
                     network.player_id = msg.player_id
                     state.apply_map_sync(msg.payload["map"])
+                    log.info(f"Joined as {msg.player_id}, map {state.map_width}x{state.map_height}")
                 elif msg.type == "state_sync":
                     state.apply_state_sync(msg.payload)
             except asyncio.QueueEmpty:
