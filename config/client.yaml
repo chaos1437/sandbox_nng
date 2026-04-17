@@ -2,10 +2,10 @@ server:
   host: 127.0.0.1
   port: 8765
 controls:
-  up: '''w'''
-  down: '''s'''
-  left: '''a'''
-  right: '''d'''
-  quit: '''q'''
+  up: 'w'
+  down: 's'
+  left: 'a'
+  right: 'd'
+  quit: 'q'
 render:
   fps: 30

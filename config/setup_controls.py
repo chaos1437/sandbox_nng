@@ -10,9 +10,9 @@ def find_curses_name(k):
     for attr in dir(curses):
         if attr.startswith("KEY_") and getattr(curses, attr) == k:
             return attr
-    # Not a special key — return quoted char
+    # Not a special key — return the char itself
     if 32 <= k <= 126:
-        return repr(chr(k))
+        return chr(k)
     return str(k)
 
 
@@ -35,8 +35,14 @@ def setup(stdscr):
         stdscr.refresh()
         key = stdscr.getch()
         name = find_curses_name(key)
-        bindings[action] = name
-        stdscr.addstr(f"  -> {name} (code {key})\n")
+        # Store as clean string: KEY_UP or single char
+        if name.startswith("KEY_"):
+            bindings[action] = name
+        elif len(name) == 3 and name.startswith("'") and name.endswith("'"):
+            bindings[action] = name[1]  # 'w' -> w
+        else:
+            bindings[action] = name
+        stdscr.addstr(f"  -> {bindings[action]} (code {key})\n")
         stdscr.refresh()
 
     # Write config
