@@ -1,0 +1,13 @@
+server:
+  host: "127.0.0.1"
+  port: 8765
+
+controls:
+  up: "KEY_UP"
+  down: "KEY_DOWN"
+  left: "KEY_LEFT"
+  right: "KEY_RIGHT"
+  quit: "q"
+
+render:
+  fps: 30

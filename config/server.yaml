@@ -1,0 +1,7 @@
+server:
+  port: 8765
+  tick_rate: 60
+
+map:
+  width: 40
+  height: 20
