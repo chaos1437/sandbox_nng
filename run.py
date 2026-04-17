@@ -32,17 +32,30 @@ def check_for_updates():
 
 
 def update():
-    """Pull latest changes."""
+    """Pull latest changes, preserving local config files on conflict."""
     repo = Path(__file__).parent
+    config_files = ["config/server.yaml", "config/client.yaml"]
+
+    # Save local configs
+    configs = {}
+    for f in config_files:
+        p = repo / f
+        if p.exists():
+            configs[f] = p.read_bytes()
+
     result = subprocess.run(
         ["git", "pull"],
         cwd=repo,
         capture_output=True,
         text=True,
     )
+
     if result.returncode != 0:
-        print(f"Git pull failed: {result.stderr}", file=sys.stderr)
-        sys.exit(1)
+        # Pull failed (likely conflict) - restore local configs
+        for f, data in configs.items():
+            (repo / f).write_bytes(data)
+        print("Git pull failed, local configs preserved")
+
     if result.stdout.strip():
         print(result.stdout.rstrip())
 
