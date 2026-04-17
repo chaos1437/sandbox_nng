@@ -9,10 +9,10 @@ DIR_EAST  = (1, 0)
 DIR_WEST  = (-1, 0)
 
 DIRS = {
-    "north": DIR_NORTH,
-    "south": DIR_SOUTH,
-    "east":  DIR_EAST,
-    "west":  DIR_WEST,
+    "up":    DIR_NORTH,
+    "down":  DIR_SOUTH,
+    "left":  DIR_WEST,
+    "right": DIR_EAST,
 }
 
 # Tile types (ASCII chars)
