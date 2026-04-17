@@ -1,5 +1,5 @@
 # server/handlers.py
-from shared.protocol import Message, encode
+from shared.protocol import Message
 from shared.constants import MSG_JOIN, MSG_LEAVE, MSG_MOVE, MSG_STATE_SYNC
 
 def handle_message(state, msg: Message) -> Message | None:

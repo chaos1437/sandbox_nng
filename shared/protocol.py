@@ -1,6 +1,8 @@
 # shared/protocol.py
 import dataclasses
+import json
 from shared.constants import *
+
 
 @dataclasses.dataclass
 class Message:
@@ -26,10 +28,10 @@ class Message:
             payload=d.get("payload", {}),
         )
 
+
 def encode(msg: Message) -> bytes:
-    import json
     return json.dumps(msg.to_dict()).encode("utf-8")
 
+
 def decode(data: bytes) -> Message:
-    import json
     return Message.from_dict(json.loads(data.decode("utf-8")))

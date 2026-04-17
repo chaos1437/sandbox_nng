@@ -8,7 +8,7 @@ from client.state import ClientGameState
 from client.input_handler import InputHandler
 from client.renderer import RoguelikeRenderer
 from shared.protocol import Message
-from shared.constants import MSG_JOIN, MSG_MOVE, MSG_LEAVE
+from shared.constants import MSG_JOIN, MSG_MOVE, MSG_LEAVE, MSG_STATE_SYNC
 from shared.logging import setup_logger
 
 log = setup_logger("client", "client.log")
@@ -50,11 +50,10 @@ async def main(stdscr):
             try:
                 msg = network.incoming.get_nowait()
                 log.debug(f"Received: {msg.type}")
-                if msg.type == "state_sync":
+                if msg.type == MSG_STATE_SYNC:
                     state.apply_state_sync(msg.payload)
-                    if not network.player_id and msg.player_id:
+                    if not state.my_player_id and msg.player_id:
                         state.set_player_id(msg.player_id)
-                        network.player_id = msg.player_id
                         log.info(f"Joined as {msg.player_id}, map {state.map_width}x{state.map_height}")
             except asyncio.QueueEmpty:
                 break
@@ -77,7 +76,7 @@ async def main(stdscr):
                 move_msg = Message(
                     type=MSG_MOVE,
                     seq=state.server_seq,
-                    player_id=network.player_id,
+                    player_id=state.my_player_id,
                     payload={"dx": dx, "dy": dy},
                 )
                 await network.send(move_msg)
@@ -87,7 +86,7 @@ async def main(stdscr):
         await receive_task
     except asyncio.CancelledError:
         pass
-    leave_msg = Message(type=MSG_LEAVE, player_id=network.player_id)
+    leave_msg = Message(type=MSG_LEAVE, player_id=state.my_player_id)
     await network.send(leave_msg)
     await network.disconnect()
 

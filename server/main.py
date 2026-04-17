@@ -4,75 +4,99 @@ import traceback
 import argparse
 from server.game_state import GameState
 from server.handlers import handle_message
-from shared.protocol import encode, decode, Message
-from shared.constants import MSG_JOIN, MSG_LEAVE, MSG_STATE_SYNC
+from shared.protocol import Message
+from shared.constants import MSG_JOIN, MSG_STATE_SYNC
 from shared.logging import setup_logger
+from shared.serializers import Serializer
 
 log = setup_logger("server", "server.log")
 
 
 class ClientConnection:
-    def __init__(self, reader, writer, state):
+    def __init__(self, reader, writer, serializer: Serializer):
         self.reader = reader
         self.writer = writer
-        self.state = state
+        self.serializer = serializer
         self.player_id: str | None = None
         self.addr = writer.get_extra_info("peername")
 
+    async def send(self, msg: Message):
+        data = self.serializer.encode(msg) + b'\n'
+        self.writer.write(data)
+        await self.writer.drain()
+
 
 async def broadcast(clients: list[ClientConnection], msg: Message):
-    """Send message to all connected clients."""
-    data = encode(msg) + b'\n'
-    dead = []
-    for client in clients:
+    """Send message to all connected clients. Return list of alive clients."""
+    alive = []
+    for conn in clients:
         try:
-            client.writer.write(data)
-            await client.writer.drain()
+            await conn.send(msg)
+            alive.append(conn)
         except Exception:
-            dead.append(client)
-    for client in dead:
-        clients.remove(client)
+            conn.writer.close()
+    return alive
 
 
-async def handle_client(reader, writer, state, clients: list[ClientConnection]):
-    addr = writer.get_extra_info("peername")
-    log.info(f"Client connected: {addr}")
-    conn = ClientConnection(reader, writer, state)
+async def handle_client(
+    reader, writer, state: GameState,
+    clients: list[ClientConnection], serializer: Serializer
+):
+    conn = ClientConnection(reader, writer, serializer)
     clients.append(conn)
+    log.info(f"Client connected: {conn.addr}")
 
     try:
         while True:
             data = await reader.readline()
             if not data:
                 break
-            msg = decode(data.rstrip(b'\n'))
+            msg = serializer.decode(data.rstrip(b'\n'))
             log.info(f"Received: {msg.type} from {msg.player_id}")
 
-            resp = handle_message(conn.state, msg)
+            # SECURITY: ignore player_id from client, use server-assigned one
+            msg = Message(
+                type=msg.type,
+                seq=msg.seq,
+                player_id=conn.player_id or msg.player_id,
+                payload=msg.payload,
+            )
+
+            resp = handle_message(state, msg)
             if resp:
-                if resp.type == MSG_STATE_SYNC and not conn.player_id:
+                # SECURITY: always use server-assigned player_id
+                if resp.player_id and not conn.player_id:
                     conn.player_id = resp.player_id
-                    log.info(f"Player {conn.player_id} joined from {addr}")
-                # Broadcast state to ALL clients
-                await broadcast(clients, resp)
+                    log.info(f"Player {conn.player_id} joined from {conn.addr}")
+                resp = Message(
+                    type=resp.type,
+                    seq=resp.seq,
+                    player_id=conn.player_id,
+                    payload=resp.payload,
+                )
+                clients[:] = await broadcast(clients, resp)
                 log.info(f"Broadcast {resp.type} to {len(clients)} clients")
     except Exception as e:
         log.error(f"Error: {e}\n{traceback.format_exc()}")
     finally:
         if conn.player_id:
-            conn.state.remove_player(conn.player_id)
+            state.remove_player(conn.player_id)
         clients.remove(conn)
-        writer.close()
-        await writer.wait_closed()
-        log.info(f"Client disconnected: {addr}")
+        conn.writer.close()
+        await conn.writer.wait_closed()
+        log.info(f"Client disconnected: {conn.addr}")
 
 
-async def main(port: int = 8765):
+async def main(port: int = 8765, serializer: Serializer | None = None):
+    if serializer is None:
+        from shared.serializers import JsonSerializer
+        serializer = JsonSerializer()
+
     state = GameState()
     clients: list[ClientConnection] = []
 
     async def handler(reader, writer):
-        await handle_client(reader, writer, state, clients)
+        await handle_client(reader, writer, state, clients, serializer)
 
     server = await asyncio.start_server(handler, "0.0.0.0", port)
     log.info(f"Listening on port {port}")

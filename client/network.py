@@ -1,17 +1,19 @@
 # client/network.py
 import asyncio
-from shared.protocol import encode, decode, Message
+from shared.protocol import Message
+from shared.serializers import Serializer
 from shared.logging import setup_logger
 
 log = setup_logger("network", "client.log")
 
+
 class NetworkClient:
-    def __init__(self, host: str, port: int):
+    def __init__(self, host: str, port: int, serializer: Serializer | None = None):
         self.host = host
         self.port = port
+        self.serializer = serializer
         self.reader = None
         self.writer = None
-        self.player_id: str = ""
         self.incoming: asyncio.Queue[Message] = asyncio.Queue()
         self._running = False
 
@@ -21,6 +23,9 @@ class NetworkClient:
                 self.host, self.port
             )
             self._running = True
+            if self.serializer is None:
+                from shared.serializers import JsonSerializer
+                self.serializer = JsonSerializer()
             return True
         except Exception as e:
             log.error(f"Connection failed: {e}")
@@ -28,7 +33,7 @@ class NetworkClient:
 
     async def send(self, msg: Message):
         if self.writer:
-            self.writer.write(encode(msg) + b'\n')
+            self.writer.write(self.serializer.encode(msg) + b'\n')
             await self.writer.drain()
 
     async def receive_loop(self):
@@ -37,7 +42,7 @@ class NetworkClient:
                 data = await self.reader.readline()
                 if not data:
                     break
-                msg = decode(data.rstrip(b'\n'))
+                msg = self.serializer.decode(data.rstrip(b'\n'))
                 await self.incoming.put(msg)
             except Exception as e:
                 log.error(f"Receive error: {e}")

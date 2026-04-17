@@ -6,8 +6,9 @@ from pathlib import Path
 def setup_logger(name: str, log_file: str | None = None, level=logging.DEBUG):
     """Configure a logger with console and optional file output."""
     logger = logging.getLogger(name)
+    if logger.handlers:
+        return logger
     logger.setLevel(level)
-    logger.handlers.clear()
 
     fmt = logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 
