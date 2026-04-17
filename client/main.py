@@ -66,11 +66,13 @@ async def main(stdscr):
         curses.napms(33)  # ~30fps
         key = renderer.get_key()
         if key != -1:
+            log.debug(f"Key pressed: {key} (quit={quit_key})")
             if key == quit_key:
                 running = False
             elif key in input_handler.key_to_dir:
                 direction = input_handler.key_to_dir[key]
                 dx, dy = input_handler.get_move_delta(direction)
+                log.debug(f"Move: {direction} ({dx},{dy})")
                 move_msg = Message(
                     type=MSG_MOVE,
                     seq=state.server_seq,
