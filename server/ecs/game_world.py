@@ -8,6 +8,8 @@ from server.map import GameMap
 from shared.protocol import Message
 from shared.constants import MsgType
 
+_SHORT_ID_LEN = 8
+
 
 class GameWorld:
     """Game world holding entities, systems, and the game map."""
@@ -46,7 +48,7 @@ class GameWorld:
 
     def _handle_join(self, msg: Message) -> Message:
         """Handle a JOIN message."""
-        player_id = msg.player_id or str(uuid.uuid4())[:8]
+        player_id = msg.player_id or uuid.uuid4().hex[:_SHORT_ID_LEN]
 
         # Notify systems
         for system in self.systems:
@@ -60,12 +62,10 @@ class GameWorld:
         self.add_entity(entity)
 
         self.seq += 1
-        return Message(
-            type=MsgType.STATE_SYNC,
-            seq=self.seq,
-            player_id=player_id,
-            payload=self.get_state_snapshot(include_map=True),
-        )
+        return self._make_state_sync(include_map=True)
+
+    def _make_state_sync(self, include_map: bool = False) -> Message:
+        return Message(type=MsgType.STATE_SYNC, seq=self.seq, payload=self.get_state_snapshot(include_map))
 
     def _handle_move(self, msg: Message) -> Message:
         """Handle a MOVE message."""
@@ -73,15 +73,14 @@ class GameWorld:
         dx = msg.payload.get("dx", 0)
         dy = msg.payload.get("dy", 0)
 
+        if not isinstance(dx, int) or not isinstance(dy, int):
+            return self._make_state_sync()
+
         # Check with all systems before move
         for system in self.systems:
             if not system.on_before_move(self, player_id, dx, dy):
                 # Blocked - return current state
-                return Message(
-                    type=MsgType.STATE_SYNC,
-                    seq=self.seq,
-                    payload=self.get_state_snapshot(),
-                )
+                return self._make_state_sync()
 
         # Perform the move
         entity = self.get_entity(player_id)
@@ -100,11 +99,7 @@ class GameWorld:
             system.on_after_move(self, player_id, dx, dy)
 
         self.seq += 1
-        return Message(
-            type=MsgType.STATE_SYNC,
-            seq=self.seq,
-            payload=self.get_state_snapshot(),
-        )
+        return self._make_state_sync()
 
     def _handle_leave(self, msg: Message) -> None:
         """Handle a LEAVE message."""
@@ -116,8 +111,7 @@ class GameWorld:
 
         # Remove entity
         self.remove_entity(player_id)
-
-        return None
+        self.seq += 1
 
     def get_state_snapshot(self, include_map: bool = False) -> dict:
         """Get a snapshot of the current game state."""
