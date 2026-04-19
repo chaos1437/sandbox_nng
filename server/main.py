@@ -8,53 +8,25 @@ from shared.constants import MsgType
 from shared.logging import setup_logger
 from shared.serializers import Serializer
 from shared.config import load_server_config
+from shared.network import Connection, ConnectionRegistry, read_message
 
-log = setup_logger("server", "server.log")
-
-
-class ClientConnection:
-    def __init__(self, reader, writer, serializer: Serializer):
-        self.reader = reader
-        self.writer = writer
-        self.serializer = serializer
-        self.player_id: str | None = None
-        self.addr = writer.get_extra_info("peername")
-
-    async def send(self, msg: Message):
-        data = self.serializer.encode(msg) + b'\n'
-        self.writer.write(data)
-        await self.writer.drain()
-
-
-async def broadcast(clients: list[ClientConnection], msg: Message):
-    """Send message to all connected clients. Return list of alive clients."""
-    alive = []
-    for conn in clients:
-        try:
-            await conn.send(msg)
-            alive.append(conn)
-        except Exception:
-            conn.writer.close()
-    return alive
+log = setup_logger(__name__, 'server.log', console=False)
 
 
 async def handle_client(
-    reader, writer, world: GameWorld,
-    clients: list[ClientConnection], serializer: Serializer
+    reader, writer, world: GameWorld, registry: ConnectionRegistry, serializer: Serializer
 ):
-    conn = ClientConnection(reader, writer, serializer)
-    clients.append(conn)
-    log.info(f"Client connected: {conn.addr}")
+    conn = Connection(reader, writer, serializer)
+    registry.add(conn)
+    log.info(f'Client connected: {conn.addr}')
 
     try:
         while True:
-            data = await reader.readline()
-            if not data:
+            msg = await read_message(reader, serializer)
+            if msg is None:
                 break
-            msg = serializer.decode(data.rstrip(b'\n'))
-            log.info(f"Received: {msg.type} from {msg.player_id}")
+            log.info(f'Received: {msg.type} from {msg.player_id}')
 
-            # SECURITY: ignore player_id from client, use server-assigned one
             msg = Message(
                 type=msg.type,
                 seq=msg.seq,
@@ -64,27 +36,25 @@ async def handle_client(
 
             resp = world.handle_message(msg)
             if resp:
-                # SECURITY: always use server-assigned player_id
                 if resp.player_id and not conn.player_id:
                     conn.player_id = resp.player_id
-                    log.info(f"Player {conn.player_id} joined from {conn.addr}")
+                    log.info(f'Player {conn.player_id} joined from {conn.addr}')
                 resp = Message(
                     type=resp.type,
                     seq=resp.seq,
                     player_id=conn.player_id,
                     payload=resp.payload,
                 )
-                clients = await broadcast(clients, resp)
-                log.info(f"Broadcast {resp.type} to {len(clients)} clients")
+                await registry.broadcast(resp)
+                log.info(f'Broadcast {resp.type} to {len(registry.all())} clients')
     except Exception as e:
-        log.error(f"Error: {e}\n{traceback.format_exc()}")
+        log.error(f'Error: {e}\n{traceback.format_exc()}')
     finally:
         if conn.player_id:
             world.remove_entity(conn.player_id)
-        clients.remove(conn)
-        conn.writer.close()
-        await conn.writer.wait_closed()
-        log.info(f"Client disconnected: {conn.addr}")
+        conn.close()
+        await conn.wait_closed()
+        registry.remove(conn)
 
 
 async def main(port: int = 8765, serializer: Serializer | None = None):
@@ -93,26 +63,40 @@ async def main(port: int = 8765, serializer: Serializer | None = None):
         serializer = JsonSerializer()
 
     cfg = load_server_config()
-    # CLI port overrides config
     port = port or cfg.port
+    host = getattr(cfg, 'host', '0.0.0.0')
 
     world = GameWorld()
     from server.ecs.systems.movement_controller import MovementController
     from server.ecs.systems.chat import ChatSystem
     world.register_system(MovementController(max_speed_tiles_per_sec=cfg.player_max_speed_tiles_per_sec))
     world.register_system(ChatSystem())
-    clients: list[ClientConnection] = []
+    registry = ConnectionRegistry()
+
+    last_seq = 0
+
+    async def tick_broadcast():
+        nonlocal last_seq
+        while True:
+            await asyncio.sleep(0.5)
+            if registry.all() and world.seq != last_seq:
+                last_seq = world.seq
+                resp = world._make_state_sync()
+                await registry.broadcast(resp)
 
     async def handler(reader, writer):
-        await handle_client(reader, writer, world, clients, serializer)
+        await handle_client(reader, writer, world, registry, serializer)
 
-    server = await asyncio.start_server(handler, "0.0.0.0", port)
-    log.info(f"Listening on port {port}")
+    server = await asyncio.start_server(handler, host, port)
+    log.info(f'Listening on {host}:{port}')
+    asyncio.create_task(tick_broadcast())
+
     async with server:
         await server.serve_forever()
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument('--port', type=int, default=8765)
     args = parser.parse_args()
     asyncio.run(main(args.port))
