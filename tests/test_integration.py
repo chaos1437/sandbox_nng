@@ -5,7 +5,8 @@ import subprocess
 import sys
 import time
 from server.main import main as run_server
-from shared.network import Connection, ConnectionRegistry
+from server.registry import ConnectionRegistry
+from shared.network import Connection
 from shared.serializers import JsonSerializer
 from shared.protocol import Message
 from shared.constants import MsgType

@@ -8,7 +8,8 @@ from shared.constants import MsgType
 from shared.logging import setup_logger
 from shared.serializers import Serializer
 from shared.config import load_server_config
-from shared.network import Connection, ConnectionRegistry, read_message
+from shared.network import Connection, read_message
+from server.registry import ConnectionRegistry
 
 log = setup_logger(__name__, 'server.log', console=False)
 

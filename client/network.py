@@ -1,7 +1,9 @@
 # client/network.py
+"""Client network layer — wraps shared Connection."""
 import asyncio
 from shared.protocol import Message
 from shared.serializers import Serializer
+from shared.network import Connection, read_message
 from shared.logging import setup_logger
 
 log = setup_logger("network", "client.log", console=False)
@@ -12,44 +14,36 @@ class NetworkClient:
         self.host = host
         self.port = port
         self.serializer = serializer
-        self.reader = None
-        self.writer = None
+        self._conn: Connection | None = None
         self.incoming: asyncio.Queue[Message] = asyncio.Queue()
         self._running = False
 
     async def connect(self) -> bool:
+        if self.serializer is None:
+            from shared.serializers import JsonSerializer
+            self.serializer = JsonSerializer()
         try:
-            self.reader, self.writer = await asyncio.open_connection(
-                self.host, self.port
-            )
+            self._conn = await Connection.connect(self.host, self.port, self.serializer)
             self._running = True
-            if self.serializer is None:
-                from shared.serializers import JsonSerializer
-                self.serializer = JsonSerializer()
             return True
         except Exception as e:
             log.error(f"Connection failed: {e}")
             return False
 
     async def send(self, msg: Message):
-        if self.writer:
-            self.writer.write(self.serializer.encode(msg) + b'\n')
-            await self.writer.drain()
+        if self._conn:
+            await self._conn.send(msg)
 
     async def receive_loop(self):
-        while self._running:
-            try:
-                data = await self.reader.readline()
-                if not data:
-                    break
-                msg = self.serializer.decode(data.rstrip(b'\n'))
-                await self.incoming.put(msg)
-            except Exception as e:
-                log.error(f"Receive error: {e}")
+        while self._running and self._conn:
+            msg = await read_message(self._conn.reader, self._conn.serializer)
+            if msg is None:
                 break
+            await self.incoming.put(msg)
 
     async def disconnect(self):
         self._running = False
-        if self.writer:
-            self.writer.close()
-            await self.writer.wait_closed()
+        if self._conn:
+            self._conn.close()
+            await self._conn.wait_closed()
+            self._conn = None

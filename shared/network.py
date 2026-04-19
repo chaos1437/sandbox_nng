@@ -1,4 +1,5 @@
 # shared/network.py
+"""TCP connection layer — shared between client and server."""
 import asyncio
 from shared.serializers import Serializer
 from shared.protocol import Message
@@ -27,42 +28,15 @@ class Connection:
     def is_alive(self) -> bool:
         return not self.writer.is_closing()
 
-
-class ConnectionRegistry:
-    def __init__(self):
-        self._connections: list[Connection] = []
-
-    def add(self, conn: Connection):
-        self._connections.append(conn)
-
-    def remove(self, conn: Connection):
-        self._connections.remove(conn)
-
-    async def broadcast(self, msg: Message):
-        alive = []
-        for conn in self._connections:
-            if conn.is_alive:
-                try:
-                    await conn.send(msg)
-                    alive.append(conn)
-                except Exception:
-                    conn.close()
-            else:
-                conn.close()
-        self._connections = alive
-        return self._connections
-
-    def by_player(self, player_id: str) -> Connection | None:
-        for conn in self._connections:
-            if conn.player_id == player_id:
-                return conn
-        return None
-
-    def all(self) -> list[Connection]:
-        return list(self._connections)
+    @staticmethod
+    async def connect(host: str, port: int, serializer: Serializer) -> 'Connection':
+        """Create an outbound TCP connection (for clients)."""
+        reader, writer = await asyncio.open_connection(host, port)
+        return Connection(reader, writer, serializer)
 
 
 async def read_message(reader: asyncio.StreamReader, serializer: Serializer) -> Message | None:
+    """Read one newline-delimited message from a stream."""
     data = await reader.readline()
     if not data:
         return None
