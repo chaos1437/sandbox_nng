@@ -4,3 +4,4 @@ __pycache__/
 .worktrees/
 *.exe
 docs/superpowers/
+CLAUDE.md
