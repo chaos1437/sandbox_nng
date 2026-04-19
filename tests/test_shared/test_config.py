@@ -1,4 +1,4 @@
-# tests/test_config.py
+# tests/test_shared/test_config.py
 import pytest
 from client.config import resolve_controls
 
