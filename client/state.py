@@ -1,5 +1,13 @@
 # client/state.py
+from dataclasses import dataclass
 from typing import Optional
+
+
+@dataclass
+class ChatLine:
+    player_id: str
+    text: str
+
 
 class ClientGameState:
     def __init__(self):
@@ -9,6 +17,10 @@ class ClientGameState:
         self.player_positions: dict[str, tuple[int, int]] = {}
         self.my_player_id: str = ""
         self.server_seq: int = 0
+        # Chat
+        self.chat_open: bool = False
+        self.chat_input: str = ""
+        self.chat_messages: list[ChatLine] = []
 
     def apply_state_sync(self, payload: dict):
         self.server_seq = payload["seq"]
@@ -21,6 +33,12 @@ class ClientGameState:
             self.map_width = payload["map"]["width"]
             self.map_height = payload["map"]["height"]
             self.map = [row[:] for row in payload["map"]["tiles"]]
+        # Chat messages
+        if "chat" in payload:
+            self.chat_messages = [
+                ChatLine(player_id=m["player_id"], text=m["text"])
+                for m in payload["chat"]
+            ]
 
     def set_player_id(self, pid: str):
         self.my_player_id = pid

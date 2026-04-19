@@ -98,7 +98,9 @@ async def main(port: int = 8765, serializer: Serializer | None = None):
 
     world = GameWorld()
     from server.ecs.systems.movement_controller import MovementController
+    from server.ecs.systems.chat import ChatSystem
     world.register_system(MovementController(max_speed_tiles_per_sec=cfg.player_max_speed_tiles_per_sec))
+    world.register_system(ChatSystem())
     clients: list[ClientConnection] = []
 
     async def handler(reader, writer):

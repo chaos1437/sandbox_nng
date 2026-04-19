@@ -1,4 +1,5 @@
 controls:
+  chat: t
   down: s
   left: a
   quit: q

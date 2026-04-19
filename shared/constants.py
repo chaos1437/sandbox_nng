@@ -6,6 +6,7 @@ class MsgType(StrEnum):
     JOIN = "join"
     LEAVE = "leave"
     MOVE = "move"
+    CHAT = "chat"
     STATE_SYNC = "state_sync"
 
 

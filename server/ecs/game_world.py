@@ -14,6 +14,7 @@ _HANDLERS = {
     MsgType.JOIN: lambda w, m: w._handle_join(m),
     MsgType.MOVE: lambda w, m: w._handle_move(m),
     MsgType.LEAVE: lambda w, m: w._handle_leave(m),
+    MsgType.CHAT: lambda w, m: w._handle_chat(m),
 }
 
 
@@ -115,6 +116,18 @@ class GameWorld:
         self.remove_entity(player_id)
         self.seq += 1
 
+    def _handle_chat(self, msg: Message) -> Message:
+        """Handle a CHAT message."""
+        player_id = msg.player_id
+        text = msg.payload.get("text", "")
+
+        for system in self.systems:
+            if hasattr(system, "on_chat"):
+                system.on_chat(self, player_id, text)
+
+        self.seq += 1
+        return self._make_state_sync()
+
     def get_state_snapshot(self, include_map: bool = False) -> dict:
         """Get a snapshot of the current game state."""
         snap = {
@@ -134,4 +147,14 @@ class GameWorld:
                 "height": self.map.height,
                 "tiles": self.map.to_lines(),
             }
+
+        # Chat messages from ChatSystem
+        for system in self.systems:
+            if hasattr(system, "_messages"):
+                snap["chat"] = [
+                    {"player_id": m.player_id, "text": m.text}
+                    for m in system._messages
+                ]
+                break
+
         return snap

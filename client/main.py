@@ -62,9 +62,32 @@ async def main(stdscr, config):
         curses.napms(16)  # ~60fps cap, prevents 100% CPU spin
         key = renderer.get_key()
         if key != -1:
-            log.debug(f"Key pressed: {key} (quit={quit_key})")
+            log.debug(f"Key pressed: {key} (quit={quit_key}, chat={input_handler.chat_key})")
             if key == quit_key:
                 running = False
+            elif key == input_handler.chat_key:
+                state.chat_open = not state.chat_open
+                if not state.chat_open:
+                    state.chat_input = ""
+            elif state.chat_open:
+                if key in (curses.KEY_ENTER, 10, 13):
+                    if state.chat_input:
+                        chat_msg = Message(
+                            type=MsgType.CHAT,
+                            seq=state.server_seq,
+                            player_id=state.my_player_id,
+                            payload={"text": state.chat_input},
+                        )
+                        await network.send(chat_msg)
+                        state.chat_input = ""
+                        state.chat_open = False
+                elif key == 27:  # ESC
+                    state.chat_input = ""
+                    state.chat_open = False
+                elif key == curses.KEY_BACKSPACE:
+                    state.chat_input = state.chat_input[:-1]
+                elif 32 <= key <= 126:
+                    state.chat_input += chr(key)
             elif key in input_handler.key_to_dir:
                 direction = input_handler.key_to_dir[key]
                 dx, dy = input_handler.get_move_delta(direction)

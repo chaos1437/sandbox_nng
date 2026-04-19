@@ -39,12 +39,28 @@ Messages: newline-delimited JSON over TCP.
 
 `shared/config.py` — versioned YAML loading. `version: 1` field. Auto-migrate on load.
 
-## Launch
+## Launch with run.py
 
 ```bash
 python run.py              # client (default)
 python run.py client
 python run.py server --port 9000
 ```
+
+
+## Launch directly without autoupdate
+```bash
+python -m client.main              
+python -m server.main
+python -m client.main --host 1.2.3.4 --port 9000
+```
+
+## TODO
+1. Добавить функциональных E2E тестов. Перейти на TDD подход.
+2. Стандартизировать сетевые взаимодействия клиента и сервера, вынести классы в shared/
+3. Добавить систему чата
+4. Добавить продвинутую систему карты(разделение на чанки, подгрузка по мере видимости, генерация новых на ходу)
+5. Бесконечный рефакторинг 
+6. Добавить NPC с pathfinding
 
 Auto-update: git pull + Y/n dialog. Local configs preserved on conflict.
