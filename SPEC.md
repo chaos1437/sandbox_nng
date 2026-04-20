@@ -32,6 +32,7 @@ shared/             # protocol, config, logging, serializers, network primitives
 
 config/             # YAML configs (auto-migrated on load)
 tests/              # pytest
+  test_client/       # client-specific tests (config, state, input)
 ```
 
 ## ECS
@@ -79,7 +80,7 @@ python -m client.main --host 1.2.3.4 --port 9000
 ```
 
 ## TODO
-1. Добавить функциональных E2E тестов. Перейти на TDD подход.
+1. Добавить функциональных E2E тестов. Перейти на TDD подход. ✅
 2. Стандартизировать сетевые взаимодействия клиента и сервера, вынести классы в shared/ ✅
 3. Добавить систему чата ✅
 4. Добавить продвинутую систему карты(разделение на чанки, подгрузка по мере видимости, генерация новых на ходу)
