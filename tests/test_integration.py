@@ -68,9 +68,8 @@ def test_client_receives_other_player_move():
             latest = state_syncs[-1]
             players = latest.payload.get('players', {})
             assert 'A' in players, f'A not in players: {players}'
-            # A spawns at center: (map_width//2) * tile_size = 20 * 16 = 320
-            # MOVE dx=1 → new x = 320 + 1*tile_size = 336
-            assert players['A']['x'] == 336, f'A.x expected 336, got {players["A"]["x"]}'
+            # A spawns at center cell (20, 10), moves dx=1 → cell 21
+            assert players['A']['x'] == 21, f'A.x expected 21, got {players["A"]["x"]}'
 
         asyncio.run(run())
     finally:

@@ -18,6 +18,7 @@ class ServerConfig:
     player_max_speed_tiles_per_sec: float = 10.0
     map_width: int = 40
     map_height: int = 20
+    tile_size: int = 16  # world units per tile (1 unit = 1 pixel)
 
 
 @dataclass

@@ -15,6 +15,6 @@ class Component:
 
 @dataclass
 class PositionComponent(Component):
-    """Component holding a 2D position."""
-    x: int = 0
-    y: int = 0
+    """Component holding a grid cell position (cell_x, cell_y)."""
+    cell_x: int = 0
+    cell_y: int = 0

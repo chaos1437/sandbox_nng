@@ -7,18 +7,18 @@ from server.ecs.component import PositionComponent
 class TestEntity:
     def test_add_component_sets_entity_id(self):
         e = Entity("player1")
-        comp = PositionComponent(entity_id="player1", x=10, y=20)
+        comp = PositionComponent(entity_id="player1", cell_x=10, cell_y=20)
         e.add_component(comp)
         assert comp.entity_id == "player1"
 
     def test_add_component_get_component(self):
         e = Entity("player1")
-        comp = PositionComponent(entity_id="player1", x=10, y=20)
+        comp = PositionComponent(entity_id="player1", cell_x=10, cell_y=20)
         e.add_component(comp)
         retrieved = e.get_component(PositionComponent)
         assert retrieved is comp
-        assert retrieved.x == 10
-        assert retrieved.y == 20
+        assert retrieved.cell_x == 10
+        assert retrieved.cell_y == 20
 
     def test_get_component_returns_none_for_missing_type(self):
         e = Entity("player1")
@@ -27,7 +27,7 @@ class TestEntity:
 
     def test_has_component_returns_true_when_present(self):
         e = Entity("player1")
-        comp = PositionComponent(entity_id="player1", x=10, y=20)
+        comp = PositionComponent(entity_id="player1", cell_x=10, cell_y=20)
         e.add_component(comp)
         assert e.has_component(PositionComponent) is True
 
@@ -37,7 +37,7 @@ class TestEntity:
 
     def test_remove_component(self):
         e = Entity("player1")
-        comp = PositionComponent(entity_id="player1", x=10, y=20)
+        comp = PositionComponent(entity_id="player1", cell_x=10, cell_y=20)
         e.add_component(comp)
         assert e.has_component(PositionComponent) is True
         e.remove_component(PositionComponent)

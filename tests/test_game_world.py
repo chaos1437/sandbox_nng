@@ -34,13 +34,13 @@ class TestGameWorld:
         player_id = list(resp.payload["players"].keys())[0]
 
         entity = world.get_entity(player_id)
-        initial_x = entity.get_component(PositionComponent).x
+        initial_x = entity.get_component(PositionComponent).cell_x
 
         move_msg = Message(type=MsgType.MOVE, player_id=player_id, payload={"dx": 1, "dy": 0})
         world.handle_message(move_msg)
 
-        new_x = entity.get_component(PositionComponent).x
-        assert new_x == initial_x + world.chunks.tile_size
+        new_x = entity.get_component(PositionComponent).cell_x
+        assert new_x == initial_x + 1
 
     def test_handle_message_move_calls_hooks(self, world, hook_collector):
         world.register_system(hook_collector)
@@ -89,12 +89,12 @@ class TestGameWorld:
         player_id = list(resp.payload["players"].keys())[0]
 
         entity = world.get_entity(player_id)
-        initial_x = entity.get_component(PositionComponent).x
+        initial_x = entity.get_component(PositionComponent).cell_x
 
         move_msg = Message(type=MsgType.MOVE, player_id=player_id, payload={"dx": 5, "dy": 0})
         world.handle_message(move_msg)
 
-        new_x = entity.get_component(PositionComponent).x
+        new_x = entity.get_component(PositionComponent).cell_x
         assert new_x == initial_x
 
     def test_get_state_snapshot_structure(self, world):
@@ -154,20 +154,18 @@ class TestGameWorld:
 
     def test_move_updates_position_returns_state_sync(self, world):
         e = Entity("p1")
-        spawn_x = (world.map_width // 2) * world.chunks.tile_size
-        spawn_y = (world.map_height // 2) * world.chunks.tile_size
-        e.add_component(PositionComponent(x=spawn_x, y=spawn_y))
+        e.add_component(PositionComponent(cell_x=world.width // 2, cell_y=world.height // 2))
         world.add_entity(e)
-        old_x = spawn_x
+        old_x = world.width // 2
         msg = Message(type=MsgType.MOVE, player_id="p1", payload={"dx": 2, "dy": 0})
         resp = world.handle_message(msg)
         assert resp is not None
         assert resp.type == MsgType.STATE_SYNC
-        assert e.get_component(PositionComponent).x == old_x + 2 * world.chunks.tile_size
+        assert e.get_component(PositionComponent).cell_x == old_x + 2
 
     def test_leave_removes_player(self, world):
         e = Entity("p1")
-        e.add_component(PositionComponent(x=2, y=2))
+        e.add_component(PositionComponent(cell_x=2, cell_y=2))
         world.add_entity(e)
         msg = Message(type=MsgType.LEAVE, player_id="p1")
         resp = world.handle_message(msg)
@@ -182,32 +180,18 @@ class TestGameWorld:
 
     def test_position_component_large_coords(self):
         from server.ecs.component import PositionComponent
-        pos = PositionComponent(x=5000, y=3000)
-        assert isinstance(pos.x, int) or isinstance(pos.x, float)
-        assert pos.x == 5000
-        assert pos.y == 3000
+        pos = PositionComponent(cell_x=5000, cell_y=3000)
+        assert isinstance(pos.cell_x, int) or isinstance(pos.cell_x, float)
+        assert pos.cell_x == 5000
+        assert pos.cell_y == 3000
 
-    def test_game_world_uses_chunk_manager(self):
-        """GameWorld should use ChunkManager for collision, not GameMap."""
-        from server.ecs.chunk import ChunkManager
-        world = GameWorld()
-        assert hasattr(world, 'chunks')
-        assert isinstance(world.chunks, ChunkManager)
+    def test_set_wall_makes_cell_impassable(self, world):
+        world.set_wall(5, 5)
+        assert world.is_passable(5, 5) is False
+        assert world.is_passable(5, 4) is True
 
-    def test_handle_message_move_uses_tile_coords_dxdy(self):
-        """MOVE with dx=1, tile_size=16 should move entity by 16 world units."""
-        world = GameWorld()
-        from server.ecs.entity import Entity
-        from server.ecs.component import PositionComponent
-        tile_x, tile_y = 10, 5
-        tile_size = world.chunks.tile_size
-        e = Entity("p1")
-        e.add_component(PositionComponent(x=tile_x * tile_size, y=tile_y * tile_size))
-        world.add_entity(e)
-
-        old_x = e.get_component(PositionComponent).x
-        move_msg = Message(type=MsgType.MOVE, player_id="p1", payload={"dx": 1, "dy": 0})
-        world.handle_message(move_msg)
-
-        new_x = e.get_component(PositionComponent).x
-        assert new_x == old_x + tile_size
+    def test_is_passable_out_of_bounds(self, world):
+        assert world.is_passable(-1, 0) is False
+        assert world.is_passable(0, -1) is False
+        assert world.is_passable(world.width, 0) is False
+        assert world.is_passable(0, world.height) is False
