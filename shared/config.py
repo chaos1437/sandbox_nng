@@ -2,7 +2,7 @@
 """Unified config loading with auto-migration support."""
 import yaml
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -18,14 +18,13 @@ class ServerConfig:
     player_max_speed_tiles_per_sec: float = 10.0
     map_width: int = 40
     map_height: int = 20
-    tile_size: int = 16  # world units per tile (1 unit = 1 pixel)
 
 
 @dataclass
 class ClientConfig:
     host: str = "127.0.0.1"
     port: int = 8765
-    controls: dict[str, Any] = field(default_factory=dict)
+    controls: dict[str, Any] = None
     fps: int = 30
 
 
@@ -34,16 +33,10 @@ def _migrate_server(data: dict, path: Path) -> dict:
     version = data.get("version", 0)
 
     if version == 0:
-        # v0 -> v1: add version field
         data["version"] = 1
         log.info(f"Migrated server config from v0 to v1: {path}")
         with open(path, "w") as f:
             yaml.dump(data, f, default_flow_style=False)
-
-    # Future migrations here:
-    # if version < 2:
-    #     ... migrate v1 -> v2
-    #     version = 2
 
     return data
 
@@ -53,7 +46,6 @@ def _migrate_client(data: dict, path: Path) -> dict:
     version = data.get("version", 0)
 
     if version == 0:
-        # v0 -> v1: add version field
         data["version"] = 1
         log.info(f"Migrated client config from v0 to v1: {path}")
         with open(path, "w") as f:

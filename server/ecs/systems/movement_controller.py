@@ -1,5 +1,4 @@
 from server.ecs import System, GameWorld
-from server.ecs.physics import can_apply_move
 from dataclasses import dataclass
 import time
 
