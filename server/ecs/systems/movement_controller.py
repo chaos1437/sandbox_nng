@@ -1,4 +1,5 @@
 from server.ecs import System, GameWorld
+from server.ecs.physics import can_apply_move
 from dataclasses import dataclass
 import time
 
@@ -16,11 +17,10 @@ class MovementController(System):
         self._records: dict[str, PlayerMoveRecord] = {}
 
     def on_before_move(self, world: GameWorld, player_id: str, dx: int, dy: int) -> bool:
-        """Rate limit check - return False to block move."""
+        """Rate limit check — return False to block move."""
         now = time.time()
         record = self._records.setdefault(player_id, PlayerMoveRecord())
 
-        # Calculate time since last move
         elapsed = now - record.last_move_time
         min_interval = 1.0 / self.max_speed if self.max_speed > 0 else 0.0
 
@@ -33,11 +33,9 @@ class MovementController(System):
         return True
 
     def on_player_leave(self, world: GameWorld, player_id: str) -> None:
-        """Clean up record when player leaves."""
         self._records.pop(player_id, None)
 
     def get_stats(self, player_id: str) -> dict:
-        """Get movement stats for a player."""
         record = self._records.get(player_id)
         if record is None:
             return {"total_moves": 0, "violations": 0}
