@@ -4,9 +4,11 @@ from typing import Optional
 
 from server.ecs import System, Entity
 from server.ecs.component import PositionComponent
-from server.ecs.map import GameMap
+from server.ecs.chunk import ChunkManager
+from server.ecs.map import TILE_EMPTY, TILE_WALL
 from shared.protocol import Message
 from shared.constants import MsgType
+from shared.config import load_server_config
 
 _SHORT_ID_LEN = 8
 
@@ -19,12 +21,18 @@ _HANDLERS = {
 
 
 class GameWorld:
-    """Game world holding entities, systems, and the game map."""
+    """Game world holding entities, systems, and chunked map."""
 
     def __init__(self) -> None:
+        config = load_server_config()
         self.entities: dict[str, Entity] = {}
         self.systems: list[System] = []
-        self.map: GameMap = GameMap()
+        self.chunks: ChunkManager = ChunkManager(
+            tiles_per_chunk=16,
+            tile_size=config.tile_size,
+        )
+        self.map_width = config.map_width
+        self.map_height = config.map_height
         self.seq: int = 0
 
     def register_system(self, system: System) -> None:
@@ -58,10 +66,10 @@ class GameWorld:
         for system in self.systems:
             system.on_player_join(self, player_id)
 
-        # Create entity with PositionComponent at spawn point
+        # Create entity with PositionComponent at spawn point (world coords)
         entity = Entity(player_id)
-        spawn_x = self.map.width // 2
-        spawn_y = self.map.height // 2
+        spawn_x = (self.map_width // 2) * self.chunks.tile_size
+        spawn_y = (self.map_height // 2) * self.chunks.tile_size
         entity.add_component(PositionComponent(x=spawn_x, y=spawn_y))
         self.add_entity(entity)
 
@@ -91,9 +99,9 @@ class GameWorld:
         if entity:
             pos = entity.get_component(PositionComponent)
             if pos:
-                nx = pos.x + dx
-                ny = pos.y + dy
-                if self.map.is_passable(nx, ny):
+                nx = pos.x + dx * self.chunks.tile_size
+                ny = pos.y + dy * self.chunks.tile_size
+                if self.chunks.is_passable(nx, ny):
                     pos.x = nx
                     pos.y = ny
 
@@ -143,9 +151,10 @@ class GameWorld:
         }
         if include_map:
             snap["map"] = {
-                "width": self.map.width,
-                "height": self.map.height,
-                "tiles": self.map.to_lines(),
+                "width": self.map_width,
+                "height": self.map_height,
+                "tile_size": self.chunks.tile_size,
+                "tiles": self._get_tile_lines(),
             }
 
         # Chat messages from ChatSystem
@@ -158,3 +167,8 @@ class GameWorld:
                 break
 
         return snap
+
+    def _get_tile_lines(self) -> list[list[str]]:
+        """Return map tiles as 2D grid of strings for the loaded area."""
+        # For now, return empty grid of configured size
+        return [[TILE_EMPTY for _ in range(self.map_width)] for _ in range(self.map_height)]

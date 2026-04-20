@@ -40,7 +40,7 @@ class TestGameWorld:
         world.handle_message(move_msg)
 
         new_x = entity.get_component(PositionComponent).x
-        assert new_x == initial_x + 1
+        assert new_x == initial_x + world.chunks.tile_size
 
     def test_handle_message_move_calls_hooks(self, world, hook_collector):
         world.register_system(hook_collector)
@@ -154,8 +154,8 @@ class TestGameWorld:
 
     def test_move_updates_position_returns_state_sync(self, world):
         e = Entity("p1")
-        spawn_x = world.map.width // 2
-        spawn_y = world.map.height // 2
+        spawn_x = (world.map_width // 2) * world.chunks.tile_size
+        spawn_y = (world.map_height // 2) * world.chunks.tile_size
         e.add_component(PositionComponent(x=spawn_x, y=spawn_y))
         world.add_entity(e)
         old_x = spawn_x
@@ -163,7 +163,7 @@ class TestGameWorld:
         resp = world.handle_message(msg)
         assert resp is not None
         assert resp.type == MsgType.STATE_SYNC
-        assert e.get_component(PositionComponent).x == old_x + 2
+        assert e.get_component(PositionComponent).x == old_x + 2 * world.chunks.tile_size
 
     def test_leave_removes_player(self, world):
         e = Entity("p1")
@@ -186,3 +186,28 @@ class TestGameWorld:
         assert isinstance(pos.x, int) or isinstance(pos.x, float)
         assert pos.x == 5000
         assert pos.y == 3000
+
+    def test_game_world_uses_chunk_manager(self):
+        """GameWorld should use ChunkManager for collision, not GameMap."""
+        from server.ecs.chunk import ChunkManager
+        world = GameWorld()
+        assert hasattr(world, 'chunks')
+        assert isinstance(world.chunks, ChunkManager)
+
+    def test_handle_message_move_uses_tile_coords_dxdy(self):
+        """MOVE with dx=1, tile_size=16 should move entity by 16 world units."""
+        world = GameWorld()
+        from server.ecs.entity import Entity
+        from server.ecs.component import PositionComponent
+        tile_x, tile_y = 10, 5
+        tile_size = world.chunks.tile_size
+        e = Entity("p1")
+        e.add_component(PositionComponent(x=tile_x * tile_size, y=tile_y * tile_size))
+        world.add_entity(e)
+
+        old_x = e.get_component(PositionComponent).x
+        move_msg = Message(type=MsgType.MOVE, player_id="p1", payload={"dx": 1, "dy": 0})
+        world.handle_message(move_msg)
+
+        new_x = e.get_component(PositionComponent).x
+        assert new_x == old_x + tile_size
