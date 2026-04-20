@@ -179,3 +179,10 @@ class TestGameWorld:
         resp = world.handle_message(msg)
         assert resp is not None
         assert resp.type == MsgType.STATE_SYNC
+
+    def test_position_component_large_coords(self):
+        from server.ecs.component import PositionComponent
+        pos = PositionComponent(x=5000, y=3000)
+        assert isinstance(pos.x, int) or isinstance(pos.x, float)
+        assert pos.x == 5000
+        assert pos.y == 3000
