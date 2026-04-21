@@ -1,15 +1,12 @@
 # shared/config.py
-"""Unified config loading with auto-migration support."""
+"""Config loading."""
 
 import yaml
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-log = logging.getLogger(__name__)
-
-CURRENT_VERSION = 1
+log = __import__("logging").getLogger(__name__)
 
 
 @dataclass
@@ -36,48 +33,19 @@ class ClientConfig:
     port: int = 8765
     controls: dict[str, Any] | None = None
     fps: int = 30
-
-
-def _migrate_server(data: dict, path: Path) -> dict:
-    """Migrate server config to current version."""
-    version = data.get("version", 0)
-
-    if version == 0:
-        data["version"] = 1
-        log.info(f"Migrated server config from v0 to v1: {path}")
-        with open(path, "w") as f:
-            yaml.dump(data, f, default_flow_style=False)
-
-    return data
-
-
-def _migrate_client(data: dict, path: Path) -> dict:
-    """Migrate client config to current version."""
-    version = data.get("version", 0)
-
-    if version == 0:
-        data["version"] = 1
-        log.info(f"Migrated client config from v0 to v1: {path}")
-        with open(path, "w") as f:
-            yaml.dump(data, f, default_flow_style=False)
-
-    return data
+    fov_radius: int = 8
+    viewport_width: int = 32
+    viewport_height: int = 32
 
 
 def load_server_config(path: str = "config/server.yaml") -> ServerConfig:
-    """Load and migrate server config."""
     full_path = Path(__file__).parent.parent / path
     if not full_path.exists():
         log.warning(f"Server config not found: {full_path}, using defaults")
         return ServerConfig()
 
     with open(full_path) as f:
-        data = yaml.safe_load(f)
-
-    if data is None:
-        data = {}
-
-    data = _migrate_server(data, full_path)
+        data = yaml.safe_load(f) or {}
 
     s = data.get("server", {})
     p = data.get("player", {})
@@ -104,19 +72,13 @@ def load_server_config(path: str = "config/server.yaml") -> ServerConfig:
 
 
 def load_client_config(path: str = "config/client.yaml") -> ClientConfig:
-    """Load and migrate client config."""
     full_path = Path(__file__).parent.parent / path
     if not full_path.exists():
         log.warning(f"Client config not found: {full_path}, using defaults")
         return ClientConfig()
 
     with open(full_path) as f:
-        data = yaml.safe_load(f)
-
-    if data is None:
-        data = {}
-
-    data = _migrate_client(data, full_path)
+        data = yaml.safe_load(f) or {}
 
     s = data.get("server", {})
     ctrl = data.get("controls", {})
@@ -127,4 +89,7 @@ def load_client_config(path: str = "config/client.yaml") -> ClientConfig:
         port=s.get("port", 8765),
         controls=ctrl,
         fps=r.get("fps", 30),
+        fov_radius=r.get("fov_radius", 8),
+        viewport_width=r.get("viewport_width", 32),
+        viewport_height=r.get("viewport_height", 32),
     )

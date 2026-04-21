@@ -19,10 +19,15 @@ async def main(stdscr, config):
 
     state = ClientGameState()
     network = NetworkClient(config.host, config.port)
-    renderer = RoguelikeRenderer(stdscr)
+    renderer = RoguelikeRenderer(
+        stdscr,
+        viewport_width=getattr(config, "viewport_width", 32),
+        viewport_height=getattr(config, "viewport_height", 32),
+        fov_radius=getattr(config, "fov_radius", 8),
+    )
     controls = resolve_controls(config.controls)
     input_handler = InputHandler(controls)
-    quit_key = controls.get("quit", ord('q'))
+    quit_key = controls.get("quit", ord("q"))
 
     if not await network.connect():
         return
@@ -45,24 +50,27 @@ async def main(stdscr, config):
         while True:
             try:
                 msg = network.incoming.get_nowait()
-                log.debug(f"Received: {msg.type}")
                 if msg.type == MsgType.STATE_SYNC:
                     state.apply_state_sync(msg.payload)
                     if not state.my_player_id and msg.player_id:
                         state.set_player_id(msg.player_id)
-                        log.info(f"Joined as {msg.player_id}, map {state.map_width}x{state.map_height}")
             except asyncio.QueueEmpty:
                 break
 
         # Render
-        if state.map:
+        if state.chunks:
+            log.debug(f"Rendering with {len(state.chunks)} chunks")
             renderer.render(state)
+        else:
+            log.debug("No chunks to render")
 
         # Input
         curses.napms(16)  # ~60fps cap, prevents 100% CPU spin
         key = renderer.get_key()
         if key != -1:
-            log.debug(f"Key pressed: {key} (quit={quit_key}, chat={input_handler.chat_key})")
+            log.debug(
+                f"Key pressed: {key} (quit={quit_key}, chat={input_handler.chat_key})"
+            )
             if key == quit_key:
                 running = False
             elif key == input_handler.chat_key:
@@ -109,14 +117,17 @@ async def main(stdscr, config):
     await network.send(leave_msg)
     await network.disconnect()
 
+
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
 
     from shared.config import load_client_config
+
     cfg = load_client_config()
     # CLI args override config file
     cfg.host = args.host
