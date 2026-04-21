@@ -5,3 +5,4 @@ __pycache__/
 *.exe
 docs/superpowers/
 CLAUDE.md
+.opencode
