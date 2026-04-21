@@ -1,25 +1,26 @@
-# server/registry.py
-"""Server-side connection registry — owns all connected clients."""
+# server/network/connections.py
 import asyncio
 from shared.network import Connection
 from shared.protocol import Message
 from shared.logging import setup_logger
 
-log = setup_logger(__name__, 'server.log', console=False)
+log = setup_logger(__name__, "server.log", console=False)
+
+__all__ = ["Connections"]
 
 
-class ConnectionRegistry:
+class Connections:
     def __init__(self):
         self._connections: list[Connection] = []
 
     def add(self, conn: Connection):
         self._connections.append(conn)
-        log.info(f'Client connected: {conn.addr}')
+        log.info(f"Client connected: {conn.addr}")
 
     def remove(self, conn: Connection):
         self._connections.remove(conn)
         if conn.player_id:
-            log.info(f'Client disconnected: {conn.addr}')
+            log.info(f"Client disconnected: {conn.addr}")
 
     async def broadcast(self, msg: Message):
         alive = []

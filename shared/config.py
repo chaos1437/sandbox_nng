@@ -1,5 +1,6 @@
 # shared/config.py
 """Unified config loading with auto-migration support."""
+
 import yaml
 import logging
 from dataclasses import dataclass
@@ -18,13 +19,16 @@ class ServerConfig:
     player_max_speed_tiles_per_sec: float = 10.0
     map_width: int = 40
     map_height: int = 20
+    chat_max_lines: int = 5
+    chat_max_length: int = 200
+    state_sync_interval: float = 0.5
 
 
 @dataclass
 class ClientConfig:
     host: str = "127.0.0.1"
     port: int = 8765
-    controls: dict[str, Any] = None
+    controls: dict[str, Any] | None = None
     fps: int = 30
 
 
@@ -72,6 +76,7 @@ def load_server_config(path: str = "config/server.yaml") -> ServerConfig:
     s = data.get("server", {})
     p = data.get("player", {})
     m = data.get("map", {})
+    c = data.get("chat", {})
 
     return ServerConfig(
         port=s.get("port", 8765),
@@ -79,6 +84,9 @@ def load_server_config(path: str = "config/server.yaml") -> ServerConfig:
         player_max_speed_tiles_per_sec=p.get("max_speed_tiles_per_sec", 10.0),
         map_width=m.get("width", 40),
         map_height=m.get("height", 20),
+        chat_max_lines=c.get("max_lines", 5),
+        chat_max_length=c.get("max_length", 200),
+        state_sync_interval=s.get("state_sync_interval", 0.5),
     )
 
 
