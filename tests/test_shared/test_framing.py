@@ -4,6 +4,7 @@
 import pytest
 from shared.protocol import Message
 from shared.constants import MsgType
+from shared.serializers import JsonSerializer
 from shared.framing import (
     encode_message,
     decode_message,
@@ -15,22 +16,25 @@ from shared.framing import (
 class TestLengthPrefixFraming:
     def test_encode_message_adds_4byte_length_prefix(self):
         msg = Message(type=MsgType.JOIN, seq=1, player_id="p1", payload={})
-        data = encode_message(msg)
+        serializer = JsonSerializer()
+        data = encode_message(msg, serializer)
         assert len(data) >= 5
         assert data[:4] == len(data[4:]).to_bytes(4, "big")
 
     def test_decode_message_strips_length_prefix(self):
         msg = Message(type=MsgType.JOIN, seq=1, player_id="p1", payload={})
-        data = encode_message(msg)
-        restored = decode_message(data)
+        serializer = JsonSerializer()
+        data = encode_message(msg, serializer)
+        restored = decode_message(data, serializer)
         assert restored.type == MsgType.JOIN
         assert restored.seq == 1
         assert restored.player_id == "p1"
 
     def test_roundtrip_join_message(self):
         original = Message(type=MsgType.JOIN, seq=0, player_id="", payload={})
-        data = encode_message(original)
-        restored = decode_message(data)
+        serializer = JsonSerializer()
+        data = encode_message(original, serializer)
+        restored = decode_message(data, serializer)
         assert restored.type == original.type
         assert restored.seq == original.seq
         assert restored.player_id == original.player_id
@@ -40,8 +44,9 @@ class TestLengthPrefixFraming:
         original = Message(
             type=MsgType.MOVE, seq=5, player_id="abc", payload={"dx": 1, "dy": 0}
         )
-        data = encode_message(original)
-        restored = decode_message(data)
+        serializer = JsonSerializer()
+        data = encode_message(original, serializer)
+        restored = decode_message(data, serializer)
         assert restored.type == MsgType.MOVE
         assert restored.payload == {"dx": 1, "dy": 0}
 
@@ -57,9 +62,10 @@ class TestLengthPrefixFraming:
                 ]
             },
         )
-        data = encode_message(original)
+        serializer = JsonSerializer()
+        data = encode_message(original, serializer)
         assert len(data) > 10000
-        restored = decode_message(data)
+        restored = decode_message(data, serializer)
         assert restored.type == MsgType.STATE_SYNC
         assert len(restored.payload["full_chunks"]) == 9
 
@@ -67,19 +73,26 @@ class TestLengthPrefixFraming:
         msg = Message(
             type=MsgType.CHAT, seq=2, player_id="user", payload={"text": "hello"}
         )
-        data = encode_message(msg)
-        restored = decode_message(data)
+        serializer = JsonSerializer()
+        data = encode_message(msg, serializer)
+        restored = decode_message(data, serializer)
         assert restored.payload["text"] == "hello"
 
     def test_decode_truncated_raises(self):
         import struct
 
+        serializer = JsonSerializer()
+
         with pytest.raises(Exception):
-            decode_message(b"\x00\x00\x00\x05hello")
+            decode_message(b"\x00\x00\x00\x05hello", serializer)
 
     def test_decode_empty_raises(self):
+        import struct
+
+        serializer = JsonSerializer()
+
         with pytest.raises(Exception):
-            decode_message(b"")
+            decode_message(b"", serializer)
 
 
 class TestMultiMessage:
@@ -88,14 +101,16 @@ class TestMultiMessage:
             Message(type=MsgType.JOIN, seq=1, player_id="p1", payload={}),
             Message(type=MsgType.MOVE, seq=2, player_id="p1", payload={"dx": 1}),
         ]
-        data = encode_messages(msgs)
-        restored = list(decode_messages(data))
+        serializer = JsonSerializer()
+        data = encode_messages(msgs, serializer)
+        restored = list(decode_messages(data, serializer))
         assert len(restored) == 2
         assert restored[0].type == MsgType.JOIN
         assert restored[1].type == MsgType.MOVE
 
     def test_encode_messages_empty(self):
-        data = encode_messages([])
+        serializer = JsonSerializer()
+        data = encode_messages([], serializer)
         assert data == b""
-        restored = list(decode_messages(data))
+        restored = list(decode_messages(data, serializer))
         assert restored == []

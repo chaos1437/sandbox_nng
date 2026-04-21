@@ -96,14 +96,22 @@ Infinite-world-ready chunk-based map storage:
 - `Connection` — single TCP abstraction (connect/reader/writer/send/close)
 - `Connections` (was ConnectionRegistry) — owns all live connections + broadcast logic
 - `ServiceRegistry` — wires network messages to services
-- `read_message` — shared helper for newline-delimited message framing
+- `read_message` / `write_message` — shared helpers for length-prefixed framing
 - `Message` — protocol unit (type, seq, player_id, payload)
 - `Serializer` ABC — swap JsonSerializer → ProtobufSerializer
+
+## Wire Format
+
+Length-prefixed framing: `[4 bytes big-endian length][N bytes serialized payload]`
+
+- 4-byte big-endian unsigned integer specifies payload length
+- Payload format depends on serializer (default: UTF-8 encoded JSON)
+- Maximum message size: 1MB enforced at read time
 
 ## Protocol
 
 `MsgType`: `JOIN`, `MOVE`, `STATE_SYNC`, `LEAVE`, `CHAT`
-Messages: newline-delimited JSON over TCP.
+Messages: length-prefixed JSON over TCP.
 
 ## Config
 

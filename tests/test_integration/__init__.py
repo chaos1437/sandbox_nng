@@ -8,6 +8,8 @@ from server.main import main as server_main
 from client.network import NetworkClient
 from shared.protocol import Message
 from shared.constants import MsgType
+from shared.framing import encode_message, read_message as framing_read_message
+from shared.serializers import JsonSerializer
 
 
 @pytest.fixture
@@ -51,12 +53,11 @@ async def test_client_can_join_and_receive_state(server_port):
     received = []
 
     async def handle_client(reader, writer):
-        from shared.serializers import JsonSerializer
-        from shared.network import read_message
         from server.network.handlers import ServiceRegistry
         from server.network.connections import Connections
         from server.state.world import get_world
 
+        serializer = JsonSerializer()
         conn = type(
             "Conn",
             (),
@@ -66,15 +67,13 @@ async def test_client_can_join_and_receive_state(server_port):
                 "player_id": None,
                 "is_alive": True,
                 "addr": writer.get_extra_info("peername"),
-                "send": lambda msg: writer.write(
-                    msg.model_dump_json().encode() + b"\n"
-                ),
+                "send": lambda msg: writer.write(encode_message(msg, serializer)),
                 "close": lambda: writer.close(),
                 "wait_closed": lambda: writer.wait_closed(),
             },
         )()
 
-        msg = await read_message(reader, JsonSerializer())
+        msg = await framing_read_message(reader, serializer)
         if msg and msg.type == "join":
             from server.services.join import JoinService
 
@@ -108,15 +107,14 @@ async def test_client_receives_chunk_data_on_join(server_port):
     GameWorldState.reset()
 
     async def handle_client(reader, writer):
-        from shared.serializers import JsonSerializer
-        from shared.network import read_message
         from server.services.join import JoinService
 
-        msg = await read_message(reader, JsonSerializer())
+        serializer = JsonSerializer()
+        msg = await framing_read_message(reader, serializer)
         if msg and msg.type == "join":
             svc = JoinService()
             resp = svc.handle(msg, suggested_id="test_player")
-            await writer.write(resp.model_dump_json().encode() + b"\n")
+            await writer.write(encode_message(resp, serializer))
             await writer.drain()
 
     server = await asyncio.start_server(handle_client, "127.0.0.1", server_port)
@@ -146,22 +144,21 @@ async def test_client_can_send_move_and_receive_near(server_port):
     GameWorldState.reset()
 
     async def handle_client(reader, writer):
-        from shared.serializers import JsonSerializer
-        from shared.network import read_message
         from server.services.join import JoinService
         from server.services.move import MoveService
         from shared.constants import MsgType
 
-        msg = await read_message(reader, JsonSerializer())
+        serializer = JsonSerializer()
+        msg = await framing_read_message(reader, serializer)
         if msg.type == "join":
             svc = JoinService()
             resp = svc.handle(msg, suggested_id="p1")
-            await writer.write(resp.model_dump_json().encode() + b"\n")
+            await writer.write(encode_message(resp, serializer))
             await writer.drain()
         elif msg.type == "move":
             svc = MoveService(max_speed_tiles_per_sec=100.0)
             resp = svc.handle(msg)
-            await writer.write(resp.model_dump_json().encode() + b"\n")
+            await writer.write(encode_message(resp, serializer))
             await writer.drain()
 
     server = await asyncio.start_server(handle_client, "127.0.0.1", server_port)

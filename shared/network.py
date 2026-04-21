@@ -1,12 +1,12 @@
 # shared/network.py
 """TCP connection layer — shared between client and server.
 
-Uses length-prefixed framing: [4 bytes length][N bytes JSON]
+Uses length-prefixed framing: [4 bytes length][N bytes serialized payload]
 """
 
 import asyncio
-from shared.serializers import Serializer
 from shared.protocol import Message
+from shared.serializers import Serializer
 from shared.framing import encode_message, decode_message
 
 
@@ -24,7 +24,7 @@ class Connection:
         self.addr = writer.get_extra_info("peername")
 
     async def send(self, msg: Message):
-        data = encode_message(msg)
+        data = encode_message(msg, self.serializer)
         self.writer.write(data)
         await self.writer.drain()
 
@@ -58,4 +58,4 @@ async def read_message(
         data = await reader.readexactly(length)
     except asyncio.IncompleteReadError:
         return None
-    return decode_message(header + data)
+    return decode_message(header + data, serializer)
