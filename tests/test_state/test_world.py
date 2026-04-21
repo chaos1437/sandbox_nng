@@ -1,4 +1,8 @@
 import pytest
+import tempfile
+import shutil
+from pathlib import Path
+
 from server.state.world import GameWorldState, get_world
 from server.state.models import Player, ChatMessage
 
@@ -39,23 +43,28 @@ class TestGameWorldState:
         world = GameWorldState()
         assert world.get_player("ghost") is None
 
-    # ── Map ─────────────────────────────────────────────────────
+    # ── Map (chunk-based) ───────────────────────────────────────
 
     def test_is_passable_empty(self):
-        world = GameWorldState(width=10, height=10)
+        world = GameWorldState()
         assert world.is_passable(0, 0) is True
-        assert world.is_passable(9, 9) is True
+        assert world.is_passable(100, 100) is True
 
     def test_is_passable_wall(self):
-        world = GameWorldState(width=10, height=10)
+        world = GameWorldState()
         world.set_wall(5, 5)
         assert world.is_passable(5, 5) is False
 
-    def test_is_passable_out_of_bounds(self):
-        world = GameWorldState(width=10, height=10)
+    def test_is_passable_out_of_world(self):
+        world = GameWorldState(world_cx=2, world_cy=2)
         assert world.is_passable(-1, 0) is False
-        assert world.is_passable(0, 10) is False
-        assert world.is_passable(10, 0) is False
+        assert world.is_passable(64, 0) is False
+
+    def test_set_wall_sets_dirty(self):
+        world = GameWorldState()
+        world.set_wall(5, 5)
+        dirty = world.chunk_manager.get_dirty_chunks()
+        assert len(dirty) == 1
 
     # ── Chat ─────────────────────────────────────────────────────
 
@@ -75,10 +84,10 @@ class TestGameWorldState:
         assert len(world.chat_messages) == 5
         assert world.chat_messages[0].text == "msg5"
 
-    # ── State snapshot ──────────────────────────────────────────
+    # ── State snapshot ───────────────────────────────────────────
 
     def test_get_state_snapshot_no_map(self):
-        world = GameWorldState(width=10, height=10)
+        world = GameWorldState()
         world.add_player(Player(id="p1", x=3, y=4))
         snap = world.get_state_snapshot(include_map=False)
         assert "players" in snap
@@ -86,15 +95,15 @@ class TestGameWorldState:
         assert snap["players"]["p1"] == {"x": 3, "y": 4}
 
     def test_get_state_snapshot_with_map(self):
-        world = GameWorldState(width=3, height=2)
-        world.set_wall(1, 0)
+        world = GameWorldState()
         snap = world.get_state_snapshot(include_map=True)
         assert "map" in snap
-        assert snap["map"]["width"] == 3
-        assert snap["map"]["height"] == 2
+        assert snap["map"]["chunk_size"] == 32
+        assert snap["map"]["world_cx"] == 16
+        assert snap["map"]["world_cy"] == 16
         tiles = snap["map"]["tiles"]
-        assert tiles[0][1] == "#"
-        assert tiles[0][0] == "."
+        assert len(tiles) == 32
+        assert len(tiles[0]) == 32
 
     def test_get_state_snapshot_with_chat(self):
         world = GameWorldState()
@@ -110,3 +119,41 @@ class TestGameWorldState:
         s2 = world.get_state_snapshot()
         assert s2["seq"] == 1
         assert s1["seq"] == 0
+
+    # ── Chunk Manager integration ───────────────────────────────
+
+    def test_world_uses_chunk_manager(self):
+        world = GameWorldState()
+        assert world.chunk_manager is not None
+
+    def test_chunk_manager_has_world_name(self):
+        world = GameWorldState(world_name="myworld")
+        assert world.chunk_manager.world_name == "myworld"
+
+    def test_chunk_manager_has_correct_size(self):
+        world = GameWorldState(world_cx=8, world_cy=8)
+        assert world.chunk_manager.world_cx == 8
+        assert world.chunk_manager.world_cy == 8
+
+    # ── Flush ────────────────────────────────────────────────────
+
+    def test_flush_flushes_dirty_chunks(self):
+        world = GameWorldState()
+        world.set_wall(5, 5)
+        world.flush()
+        chunk = world.chunk_manager.get_chunk(0, 0)
+        assert chunk.dirty is False
+
+    # ── World with temp directory ──────────────────────────────
+
+    def test_world_with_temp_dir(self):
+        temp_dir = tempfile.mkdtemp()
+        try:
+            world = GameWorldState(world_name="test", world_dir=temp_dir)
+            world.set_wall(10, 10)
+            world.flush()
+
+            chunk_file = Path(temp_dir) / "test" / "chunks" / "0_0.json"
+            assert chunk_file.exists()
+        finally:
+            shutil.rmtree(temp_dir)

@@ -27,8 +27,16 @@ server/
     leave.py         # LEAVE → STATE_SYNC (cleanup)
   state/            # game state singleton
     models.py        # Player, ChatMessage dataclasses
+    chunk.py         # Chunk dataclass + generate_chunk()
+    chunk_manager.py # ChunkManager (LRU cache, flush, dirty, bounds)
     world.py         # GameWorldState singleton (players, map, chat, seq)
-  main.py           # entry point, wires network + services
+    manifest.py      # WorldManifest + manifest load/save
+    world_io.py      # World serialization/deserialization
+  worlds/           # world storage (auto-created)
+    default/         # default world (name from config)
+      manifest.json
+      chunks/
+  main.py           # entry point, wires network + services, shutdown flush
 
 shared/             # protocol, config, logging, serializers, network primitives
   network.py        # Connection + read_message (shared TCP abstraction)
@@ -68,11 +76,20 @@ Each service is a simple class with a `handle(msg: Message) -> Message | None` m
 
 Single source of truth for all game state:
 - `players: dict[str, Player]` — active players
-- `cells: list[list[bool]]` — map grid (False=passable, True=wall)
+- `chunk_manager: ChunkManager` — manages all world chunks
 - `chat_messages: list[ChatMessage]` — recent chat history
 - `seq: int` — monotonically increasing state version
 
 Extensible via `get_instance()` / `reset()` pattern (swap for test doubles).
+
+### Chunk System
+
+Infinite-world-ready chunk-based map storage:
+- `Chunk` (32x32 tiles) — basic unit of world storage
+- `ChunkManager` — LRU cache (default 64 chunks), manages loading/saving
+- `WorldManifest` — world metadata (seed, size, chunk_size)
+- Disk persistence: `worlds/<name>/chunks/<cx>_<cy>.json`
+- Periodic flush of dirty chunks, eviction to disk on cache overflow
 
 ## Network Layer
 
@@ -99,6 +116,11 @@ Messages: newline-delimited JSON over TCP.
 - `chat_max_lines` (default 5)
 - `chat_max_length` (default 200)
 - `state_sync_interval` (default 0.5s)
+- `world_name` (default "default")
+- `world_cx`, `world_cy` (default 16x16 = 512x512 tiles)
+- `chunk_size` (default 32)
+- `cache_size` (default 64)
+- `world_seed` (default 42)
 
 `ClientConfig` fields:
 - `host`, `port`, `controls`, `fps`
@@ -126,5 +148,6 @@ python -m client.main --host 1.2.3.4 --port 9000
 4. Добавить систему карты (пока простая grid, future: chunked) ✅
 5. Рефакторинг: ECS → Event-Driven ✅
 6. Добавить NPC с pathfinding
+7. Chunk-based world system ✅
 
 Auto-update: git pull + Y/n dialog. Local configs preserved on conflict.

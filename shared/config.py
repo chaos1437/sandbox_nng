@@ -22,6 +22,12 @@ class ServerConfig:
     chat_max_lines: int = 5
     chat_max_length: int = 200
     state_sync_interval: float = 0.5
+    world_name: str = "default"
+    world_cx: int = 16
+    world_cy: int = 16
+    chunk_size: int = 32
+    cache_size: int = 64
+    world_seed: int = 42
 
 
 @dataclass
@@ -77,6 +83,7 @@ def load_server_config(path: str = "config/server.yaml") -> ServerConfig:
     p = data.get("player", {})
     m = data.get("map", {})
     c = data.get("chat", {})
+    w = data.get("world", {})
 
     return ServerConfig(
         port=s.get("port", 8765),
@@ -87,6 +94,12 @@ def load_server_config(path: str = "config/server.yaml") -> ServerConfig:
         chat_max_lines=c.get("max_lines", 5),
         chat_max_length=c.get("max_length", 200),
         state_sync_interval=s.get("state_sync_interval", 0.5),
+        world_name=w.get("name", "default"),
+        world_cx=w.get("cx", 16),
+        world_cy=w.get("cy", 16),
+        chunk_size=w.get("chunk_size", 32),
+        cache_size=w.get("cache_size", 64),
+        world_seed=w.get("seed", 42),
     )
 
 

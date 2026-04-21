@@ -4,26 +4,41 @@ from typing import TYPE_CHECKING, Optional
 from server.state.models import Player, ChatMessage
 
 if TYPE_CHECKING:
-    from shared.constants import TILE_WALL, TILE_EMPTY
+    from server.state.chunk_manager import ChunkManager
 
 __all__ = ["GameWorldState", "get_world"]
 
 
 class GameWorldState:
-    """Singleton game state — players, map, chat.
+    """Singleton game state — players, map (chunk-based), chat.
 
     Single instance via get_world(), resettable for testing.
-    Supports extension hooks (plugin-like pattern for future features).
     """
 
     _instance: Optional["GameWorldState"] = None
 
-    def __init__(self, width: int = 40, height: int = 20):
-        self.width = width
-        self.height = height
-        self.cells: list[list[bool]] = [
-            [False for _ in range(width)] for _ in range(height)
-        ]
+    def __init__(
+        self,
+        world_name: str = "default",
+        world_dir: str = "./server/worlds",
+        world_cx: int = 16,
+        world_cy: int = 16,
+        chunk_size: int = 32,
+        cache_size: int = 64,
+        seed: int = 42,
+    ):
+        from server.state.chunk_manager import ChunkManager
+
+        self.world_name = world_name
+        self.chunk_manager = ChunkManager(
+            world_name=world_name,
+            world_dir=world_dir,
+            world_cx=world_cx,
+            world_cy=world_cy,
+            chunk_size=chunk_size,
+            cache_size=cache_size,
+            seed=seed,
+        )
         self.players: dict[str, Player] = {}
         self.chat_messages: list[ChatMessage] = []
         self.seq: int = 0
@@ -36,7 +51,6 @@ class GameWorldState:
 
     @classmethod
     def reset(cls) -> None:
-        """Reset singleton — for testing."""
         cls._instance = None
 
     def add_player(self, player: Player) -> None:
@@ -48,19 +62,42 @@ class GameWorldState:
     def get_player(self, player_id: str) -> Optional[Player]:
         return self.players.get(player_id)
 
-    def set_wall(self, cell_x: int, cell_y: int) -> None:
-        if 0 <= cell_x < self.width and 0 <= cell_y < self.height:
-            self.cells[cell_y][cell_x] = True
+    def set_wall(self, cell_x: int, cell_y: int) -> bool:
+        cx, cy, lx, ly = self.chunk_manager.world_to_chunk(cell_x, cell_y)
+        chunk = self.chunk_manager.get_chunk(cx, cy)
+        if chunk is None:
+            return False
+        from shared.constants import TILE_WALL
+
+        return chunk.set_tile(lx, ly, TILE_WALL)
 
     def is_passable(self, cell_x: int, cell_y: int) -> bool:
-        if not (0 <= cell_x < self.width and 0 <= cell_y < self.height):
+        cx, cy, lx, ly = self.chunk_manager.world_to_chunk(cell_x, cell_y)
+        chunk = self.chunk_manager.get_chunk(cx, cy)
+        if chunk is None:
             return False
-        return not self.cells[cell_y][cell_x]
+        tile = chunk.get_tile(lx, ly)
+        if tile is None:
+            return False
+        from shared.constants import TILE_EMPTY
+
+        return tile == TILE_EMPTY
 
     def add_chat_message(self, msg: ChatMessage, max_lines: int = 5) -> None:
         self.chat_messages.append(msg)
         if len(self.chat_messages) > max_lines:
             self.chat_messages = self.chat_messages[-max_lines:]
+
+    def flush(self):
+        self.chunk_manager.flush()
+
+    @property
+    def width(self) -> int:
+        return self.chunk_manager.chunk_size * self.chunk_manager.world_cx
+
+    @property
+    def height(self) -> int:
+        return self.chunk_manager.chunk_size * self.chunk_manager.world_cy
 
     def get_state_snapshot(self, include_map: bool = False) -> dict:
         snap = {
@@ -69,9 +106,10 @@ class GameWorldState:
         }
         if include_map:
             snap["map"] = {
-                "width": self.width,
-                "height": self.height,
-                "tiles": self._grid_to_strings(),
+                "chunk_size": self.chunk_manager.chunk_size,
+                "world_cx": self.chunk_manager.world_cx,
+                "world_cy": self.chunk_manager.world_cy,
+                "tiles": self._get_center_chunk_tiles(),
             }
         if self.chat_messages:
             snap["chat"] = [
@@ -79,13 +117,16 @@ class GameWorldState:
             ]
         return snap
 
-    def _grid_to_strings(self) -> list[list[str]]:
-        from shared.constants import TILE_WALL, TILE_EMPTY
-
-        result = []
-        for row in self.cells:
-            result.append([TILE_WALL if cell else TILE_EMPTY for cell in row])
-        return result
+    def _get_center_chunk_tiles(self):
+        cx = self.chunk_manager.world_cx // 2
+        cy = self.chunk_manager.world_cy // 2
+        chunk = self.chunk_manager.get_chunk(cx, cy)
+        if chunk is None:
+            return [
+                ["." for _ in range(self.chunk_manager.chunk_size)]
+                for _ in range(self.chunk_manager.chunk_size)
+            ]
+        return chunk.tiles
 
 
 def get_world() -> GameWorldState:

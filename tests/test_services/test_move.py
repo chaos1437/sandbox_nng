@@ -64,32 +64,32 @@ class TestMoveService:
 
     def test_rate_limit_allows_fast_enough_moves(self):
         self._join_player()
-        # 10 tiles/sec = 0.1s min interval
+        world = GameWorldState.get_instance()
+        center_x = world.width // 2
+
         svc = MoveService(max_speed_tiles_per_sec=10.0)
 
-        # First move should always succeed
         r1 = svc.handle(
             Message(type=MsgType.MOVE, player_id="p1", payload={"dx": 1, "dy": 0})
         )
-        assert r1.payload["players"]["p1"]["x"] == 20 + 1
+        assert r1.payload["players"]["p1"]["x"] == center_x + 1
 
     def test_rate_limit_blocks_too_fast(self):
         self._join_player()
-        svc = MoveService(max_speed_tiles_per_sec=10.0)  # 0.1s min interval
+        world = GameWorldState.get_instance()
+        center_x = world.width // 2
 
-        # First move
+        svc = MoveService(max_speed_tiles_per_sec=10.0)
+
         svc.handle(
             Message(type=MsgType.MOVE, player_id="p1", payload={"dx": 1, "dy": 0})
         )
 
-        # Immediate second move — should be blocked
         r2 = svc.handle(
             Message(type=MsgType.MOVE, player_id="p1", payload={"dx": 1, "dy": 0})
         )
 
-        world = GameWorldState.get_instance()
-        # Player should still be at x=21 (didn't move)
-        assert world.get_player("p1").x == 21
+        assert world.get_player("p1").x == center_x + 1
 
     def test_rate_limit_violations_tracked(self):
         self._join_player()

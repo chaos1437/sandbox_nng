@@ -12,6 +12,14 @@ from server.network.handlers import handle_client, ServiceRegistry
 log = setup_logger(__name__, "server.log", console=False)
 
 
+def _flush_world():
+    from server.state.world import get_world
+
+    world = get_world()
+    world.flush()
+    log.info("World state flushed on shutdown")
+
+
 async def main(port: int | None = None, serializer=None):
     """Start the game server."""
     if serializer is None:
@@ -27,7 +35,6 @@ async def main(port: int | None = None, serializer=None):
     last_seq = 0
 
     async def tick_broadcast():
-        """Broadcast state sync periodically to all clients."""
         nonlocal last_seq
         from server.state.world import get_world
         from shared.protocol import Message
@@ -52,8 +59,12 @@ async def main(port: int | None = None, serializer=None):
     log.info(f"Listening on {host}:{port}")
     asyncio.create_task(tick_broadcast())
 
-    async with server:
-        await server.serve_forever()
+    try:
+        async with server:
+            await server.serve_forever()
+    except asyncio.CancelledError:
+        log.info("Server cancelled, flushing world state...")
+        _flush_world()
 
 
 if __name__ == "__main__":

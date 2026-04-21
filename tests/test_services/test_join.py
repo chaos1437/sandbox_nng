@@ -35,7 +35,9 @@ class TestJoinService:
         svc = JoinService()
         result = svc.handle(Message(type=MsgType.JOIN, player_id="p1"))
         assert "map" in result.payload
-        assert result.payload["map"]["width"] == 40
+        assert "chunk_size" in result.payload["map"]
+        assert "world_cx" in result.payload["map"]
+        assert "world_cy" in result.payload["map"]
 
     def test_join_increments_seq(self):
         svc = JoinService()
