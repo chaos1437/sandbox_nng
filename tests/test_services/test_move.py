@@ -51,14 +51,14 @@ class TestMoveService:
         result = svc.handle(
             Message(type=MsgType.MOVE, player_id="p1", payload={"dx": "bad", "dy": 0})
         )
-        assert result.type == MsgType.STATE_SYNC
+        assert result.type == MsgType.MOVE_NEAR
 
     def test_move_unknown_player_returns_sync(self):
         svc = MoveService(max_speed_tiles_per_sec=10.0)
         result = svc.handle(
             Message(type=MsgType.MOVE, player_id="ghost", payload={"dx": 1, "dy": 0})
         )
-        assert result.type == MsgType.STATE_SYNC
+        assert result.type == MsgType.MOVE_NEAR
 
     # ── Rate limiting ───────────────────────────────────────────
 
@@ -69,10 +69,10 @@ class TestMoveService:
 
         svc = MoveService(max_speed_tiles_per_sec=10.0)
 
-        r1 = svc.handle(
+        svc.handle(
             Message(type=MsgType.MOVE, player_id="p1", payload={"dx": 1, "dy": 0})
         )
-        assert r1.payload["players"]["p1"]["x"] == center_x + 1
+        assert world.get_player("p1").x == center_x + 1
 
     def test_rate_limit_blocks_too_fast(self):
         self._join_player()

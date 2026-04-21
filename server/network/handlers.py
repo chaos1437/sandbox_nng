@@ -6,6 +6,7 @@ import traceback
 from shared.network import Connection, read_message
 from shared.protocol import Message
 from shared.logging import setup_logger
+from shared.constants import MsgType
 from server.services.join import JoinService
 from server.services.move import MoveService
 from server.services.chat import ChatService
@@ -47,7 +48,7 @@ async def handle_client(reader, writer, connections, services, serializer):
 
     - Reads messages
     - Dispatches to services via ServiceRegistry
-    - Broadcasts responses to all clients
+    - Broadcasts responses to clients (per-client views for move, all for join/chat)
     - On disconnect, calls leave service
     """
     conn = Connection(reader, writer, serializer)
@@ -61,7 +62,6 @@ async def handle_client(reader, writer, connections, services, serializer):
                 break
             log.info(f"Received: {msg.type} from {msg.player_id}")
 
-            # Normalize: prefer conn.player_id over msg.player_id
             normalized = Message(
                 type=msg.type,
                 seq=msg.seq,
@@ -69,24 +69,51 @@ async def handle_client(reader, writer, connections, services, serializer):
                 payload=msg.payload,
             )
 
-            # Dispatch to service
             resp = services.dispatch(normalized, player_id=conn.player_id)
 
             if resp:
-                # If this is a join response, capture the new player_id
                 if resp.player_id and not conn.player_id:
                     conn.player_id = resp.player_id
                     log.info(f"Player {conn.player_id} joined from {conn.addr}")
 
-                # Broadcast to all
-                broadcast_msg = Message(
-                    type=resp.type,
-                    seq=resp.seq,
-                    player_id=conn.player_id,
-                    payload=resp.payload,
-                )
-                await connections.broadcast(broadcast_msg)
-                log.info(f"Broadcast {resp.type} to {len(connections.all())} clients")
+                world = get_world()
+
+                if resp.type == "move_near":
+                    mover_id = resp.player_id
+                    for c in connections.all():
+                        if c.player_id is None:
+                            continue
+                        if c.player_id == mover_id:
+                            view = world.get_player_view(mover_id)
+                            await c.send(
+                                Message(
+                                    type=resp.type,
+                                    seq=resp.seq,
+                                    player_id=mover_id,
+                                    payload=view,
+                                )
+                            )
+                        else:
+                            if world.fov_manager.should_send_to(c.player_id, mover_id):
+                                mover = world.get_player(mover_id)
+                                await c.send(
+                                    Message(
+                                        type=resp.type,
+                                        seq=resp.seq,
+                                        player_id=mover_id,
+                                        payload={
+                                            "mover_id": mover_id,
+                                            "x": mover.x,
+                                            "y": mover.y,
+                                        }
+                                        if mover
+                                        else {},
+                                    )
+                                )
+                else:
+                    await connections.broadcast(resp)
+
+                log.info(f"Sent {resp.type} to clients")
 
     except Exception as e:
         log.error(f"Error: {e}\n{traceback.format_exc()}")

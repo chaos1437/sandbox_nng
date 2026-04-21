@@ -26,9 +26,10 @@ class JoinService:
         world.add_player(player)
         world.seq += 1
 
+        payload = world.get_player_view(player_id)
         return Message(
             type=MsgType.STATE_SYNC,
             seq=world.seq,
             player_id=player_id,
-            payload=world.get_state_snapshot(include_map=True),
+            payload=payload,
         )

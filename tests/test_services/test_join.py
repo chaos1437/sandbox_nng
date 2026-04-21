@@ -31,13 +31,13 @@ class TestJoinService:
         assert p.x == world.width // 2
         assert p.y == world.height // 2
 
-    def test_join_includes_map_in_first_response(self):
+    def test_join_includes_full_chunks_in_first_response(self):
         svc = JoinService()
         result = svc.handle(Message(type=MsgType.JOIN, player_id="p1"))
-        assert "map" in result.payload
-        assert "chunk_size" in result.payload["map"]
-        assert "world_cx" in result.payload["map"]
-        assert "world_cy" in result.payload["map"]
+        assert "full_chunks" in result.payload
+        assert len(result.payload["full_chunks"]) > 0
+        assert "deltas" in result.payload
+        assert isinstance(result.payload["deltas"], list)
 
     def test_join_increments_seq(self):
         svc = JoinService()

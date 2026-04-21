@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
 from server.state.models import Player, ChatMessage
+from server.state.fov_manager import FOVManager
 
 if TYPE_CHECKING:
     from server.state.chunk_manager import ChunkManager
@@ -26,6 +27,7 @@ class GameWorldState:
         chunk_size: int = 32,
         cache_size: int = 64,
         seed: int = 42,
+        fov_radius: int = 1,
     ):
         from server.state.chunk_manager import ChunkManager
 
@@ -42,6 +44,7 @@ class GameWorldState:
         self.players: dict[str, Player] = {}
         self.chat_messages: list[ChatMessage] = []
         self.seq: int = 0
+        self.fov_manager = FOVManager(chunk_radius=fov_radius)
 
     @classmethod
     def get_instance(cls) -> "GameWorldState":
@@ -116,6 +119,35 @@ class GameWorldState:
                 {"player_id": m.player_id, "text": m.text} for m in self.chat_messages
             ]
         return snap
+
+    def get_player_view(self, player_id: str) -> dict:
+        player = self.players.get(player_id)
+        if player is None:
+            return {
+                "seq": self.seq,
+                "players": {},
+                "full_chunks": [],
+                "deltas": [],
+            }
+        fov_chunks = self.fov_manager.update_fov(player)
+        full_chunks = []
+        deltas = []
+        for cx, cy in fov_chunks:
+            chunk = self.chunk_manager.get_chunk(cx, cy)
+            if chunk is None:
+                continue
+            full_chunks.append({"cx": cx, "cy": cy, "tiles": chunk.tiles})
+            for ly in range(len(chunk.tiles)):
+                for lx in range(len(chunk.tiles[ly])):
+                    wx = cx * self.chunk_manager.chunk_size + lx
+                    wy = cy * self.chunk_manager.chunk_size + ly
+                    deltas.append([wx, wy, chunk.tiles[ly][lx]])
+        return {
+            "seq": self.seq,
+            "players": {pid: {"x": p.x, "y": p.y} for pid, p in self.players.items()},
+            "full_chunks": full_chunks,
+            "deltas": deltas,
+        }
 
     def _get_center_chunk_tiles(self):
         cx = self.chunk_manager.world_cx // 2

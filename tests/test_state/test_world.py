@@ -157,3 +157,57 @@ class TestGameWorldState:
             assert chunk_file.exists()
         finally:
             shutil.rmtree(temp_dir)
+
+    # ── get_player_view ─────────────────────────────────────────
+
+    def test_get_player_view_full_chunks_in_fov(self):
+        world = GameWorldState()
+        player = Player(id="p1", x=0, y=0)
+        world.add_player(player)
+        view = world.get_player_view("p1")
+        assert "full_chunks" in view
+        assert "deltas" in view
+        assert (
+            len(view["full_chunks"]) == 4
+        )  # 3x3 minus 5 out-of-bounds from (0,0) corner
+
+    def test_get_player_view_deltas_format(self):
+        world = GameWorldState()
+        player = Player(id="p1", x=0, y=0)
+        world.add_player(player)
+        view = world.get_player_view("p1")
+        assert isinstance(view["deltas"], list)
+        if view["deltas"]:
+            delta = view["deltas"][0]
+            assert len(delta) == 3  # [x, y, tile]
+
+    def test_get_player_view_unknown_player(self):
+        world = GameWorldState()
+        view = world.get_player_view("ghost")
+        assert view["full_chunks"] == []
+        assert view["deltas"] == []
+        assert "players" in view
+
+    def test_get_player_view_includes_players(self):
+        world = GameWorldState()
+        p1 = Player(id="p1", x=0, y=0)
+        p2 = Player(id="p2", x=100, y=100)
+        world.add_player(p1)
+        world.add_player(p2)
+        view = world.get_player_view("p1")
+        assert "p1" in view["players"]
+        assert "p2" in view["players"]
+
+    def test_get_player_view_tile_deltas_match_full_chunks(self):
+        world = GameWorldState()
+        player = Player(id="p1", x=0, y=0)
+        world.add_player(player)
+        view = world.get_player_view("p1")
+        # The union of tiles in full_chunks should match deltas
+        # Create a dict from deltas
+        delta_dict = {(d[0], d[1]): d[2] for d in view["deltas"]}
+        # Each full chunk should contribute chunk_size*chunk_size tiles
+        total_tiles = sum(
+            len(c["tiles"]) * len(c["tiles"][0]) for c in view["full_chunks"]
+        )
+        assert len(delta_dict) == total_tiles

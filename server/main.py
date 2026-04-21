@@ -45,12 +45,18 @@ async def main(port: int | None = None, serializer=None):
             world = get_world()
             if connections.all() and world.seq != last_seq:
                 last_seq = world.seq
-                resp = Message(
-                    type=MsgType.STATE_SYNC,
-                    seq=world.seq,
-                    payload=world.get_state_snapshot(),
-                )
-                await connections.broadcast(resp)
+                for conn in connections.all():
+                    if conn.player_id is None:
+                        continue
+                    view = world.get_player_view(conn.player_id)
+                    await conn.send(
+                        Message(
+                            type=MsgType.STATE_SYNC,
+                            seq=world.seq,
+                            player_id=conn.player_id,
+                            payload=view,
+                        )
+                    )
 
     async def handler(reader, writer):
         await handle_client(reader, writer, connections, services, serializer)
