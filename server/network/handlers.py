@@ -30,10 +30,10 @@ class ServiceRegistry:
         )
         self.leave = LeaveService()
 
-    def dispatch(self, msg: Message, player_id: str | None = None) -> Message | None:
+    def dispatch(self, msg: Message) -> Message | None:
         """Route message to appropriate service."""
         if msg.type == "join":
-            return self.join.handle(msg, suggested_id=player_id)
+            return self.join.handle(msg)
         elif msg.type == "move":
             return self.move.handle(msg)
         elif msg.type == "chat":
@@ -62,14 +62,15 @@ async def handle_client(reader, writer, connections, services, serializer):
                 break
             log.info(f"Received: {msg.type} from {msg.player_id}")
 
+            # Player ID comes from server-side connection state, not from client.
+            # Client doesn't send player_id - server assigns it on join.
             normalized = Message(
                 type=msg.type,
                 seq=msg.seq,
-                player_id=conn.player_id or msg.player_id,
+                player_id=conn.player_id,
                 payload=msg.payload,
             )
-
-            resp = services.dispatch(normalized, player_id=conn.player_id)
+            resp = services.dispatch(normalized)
 
             if resp:
                 if resp.player_id and not conn.player_id:
