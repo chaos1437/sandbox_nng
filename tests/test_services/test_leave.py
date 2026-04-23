@@ -15,20 +15,22 @@ class TestLeaveService:
         join_svc = JoinService()
         leave_svc = LeaveService()
 
-        join_svc.handle(Message(type=MsgType.JOIN, player_id="p1"))
+        r = join_svc.handle(Message(type=MsgType.JOIN, player_id=""))
+        pid = r.player_id
         world = GameWorldState.get_instance()
-        assert world.get_player("p1") is not None
+        assert world.get_player(pid) is not None
 
-        leave_svc.handle(Message(type=MsgType.LEAVE, player_id="p1"))
-        assert world.get_player("p1") is None
+        leave_svc.handle(Message(type=MsgType.LEAVE, player_id=pid))
+        assert world.get_player(pid) is None
 
     def test_leave_increments_seq(self):
         join_svc = JoinService()
         leave_svc = LeaveService()
 
-        r1 = join_svc.handle(Message(type=MsgType.JOIN, player_id="p1"))
-        r2 = leave_svc.handle(Message(type=MsgType.LEAVE, player_id="p1"))
-        assert r2.payload["seq"] == r1.payload["seq"] + 1
+        r1 = join_svc.handle(Message(type=MsgType.JOIN, player_id=""))
+        pid = r1.player_id
+        r2 = leave_svc.handle(Message(type=MsgType.LEAVE, player_id=pid))
+        assert r2.seq == r1.seq + 1
 
     def test_leave_unknown_player_is_noop(self):
         leave_svc = LeaveService()

@@ -69,35 +69,38 @@ class TestGameWorldChunkStreaming:
         world = GameWorldState.get_instance()
         svc = JoinService()
 
-        resp = svc.handle(Message(type=MsgType.JOIN, player_id="p1"))
+        resp = svc.handle(Message(type=MsgType.JOIN, player_id=""))
 
-        player = world.get_player("p1")
+        player = world.get_player(resp.player_id)
         assert player is not None
         assert player.x == world.width // 2
         assert player.y == world.height // 2
 
-    def test_move_returns_move_near_type(self):
+    def test_move_returns_state_sync(self):
         world = GameWorldState.get_instance()
-        JoinService().handle(Message(type=MsgType.JOIN, player_id="p1"))
+        JoinService().handle(Message(type=MsgType.JOIN, player_id=""))
 
         svc = MoveService(max_speed_tiles_per_sec=100.0)
         resp = svc.handle(
-            Message(type=MsgType.MOVE, player_id="p1", payload={"dx": 1, "dy": 0})
+            Message(type=MsgType.MOVE, player_id="", payload={"dx": 1, "dy": 0})
         )
 
-        assert resp.type == MsgType.MOVE_NEAR
-        assert resp.payload["mover_id"] == "p1"
+        assert resp.type == MsgType.STATE_SYNC
+        assert "players" in resp.payload
+        assert "full_chunks" in resp.payload
+        assert "deltas" in resp.payload
 
     def test_player_view_for_known_player(self):
         world = GameWorldState.get_instance()
-        JoinService().handle(Message(type=MsgType.JOIN, player_id="p1"))
+        resp = JoinService().handle(Message(type=MsgType.JOIN, player_id=""))
+        pid = resp.player_id
 
-        view = world.get_player_view("p1")
+        view = world.get_player_view(pid)
 
         assert "full_chunks" in view
         assert "deltas" in view
         assert "players" in view
-        assert "p1" in view["players"]
+        assert pid in view["players"]
 
     def test_player_view_for_unknown_player(self):
         world = GameWorldState.get_instance()
