@@ -2,13 +2,14 @@ from server.state.models import Player
 
 
 class FOVManager:
-    def __init__(self, chunk_radius: int = 1):
+    def __init__(self, chunk_radius: int = 1, chunk_size: int = 32):
         self.chunk_radius = chunk_radius
+        self.chunk_size = chunk_size
         self._player_fov: dict[str, set[tuple[int, int]]] = {}
 
     def compute_fov(self, player: Player) -> set[tuple[int, int]]:
-        cx = player.x // 32
-        cy = player.y // 32
+        cx = player.x // self.chunk_size
+        cy = player.y // self.chunk_size
         r = self.chunk_radius
         return {
             (cx + dx, cy + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)
@@ -41,4 +42,7 @@ class FOVManager:
         return bool(recipient_fov & mover_fov)
 
     def get_player_chunk(self, player: Player) -> tuple[int, int]:
-        return (player.x // 32, player.y // 32)
+        return (player.x // self.chunk_size, player.y // self.chunk_size)
+
+    def remove_player(self, player_id: str) -> None:
+        self._player_fov.pop(player_id, None)

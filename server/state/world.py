@@ -44,7 +44,10 @@ class GameWorldState:
         self.players: dict[str, Player] = {}
         self.chat_messages: list[ChatMessage] = []
         self.seq: int = 0
-        self.fov_manager = FOVManager(chunk_radius=fov_radius)
+        self.fov_manager = FOVManager(
+            chunk_radius=fov_radius,
+            chunk_size=chunk_size,
+        )
 
     @classmethod
     def get_instance(cls) -> "GameWorldState":

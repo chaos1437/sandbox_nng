@@ -11,6 +11,9 @@ class Player:
     last_move_time: float = 0.0
     violations: int = 0
     total_moves: int = 0
+    last_chunk: tuple[int, int] = (0, 0)
+    current_fov: set[tuple[int, int]] = field(default_factory=set)
+    pending_full_chunks: set[tuple[int, int]] = field(default_factory=set)
 
 
 @dataclass
