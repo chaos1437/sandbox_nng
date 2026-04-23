@@ -1,4 +1,5 @@
 from server.state.world import get_world
+from server.services.state_sync import make_state_sync
 from shared.protocol import Message
 from shared.constants import MsgType
 
@@ -15,7 +16,6 @@ class LeaveService:
         """
         world = get_world()
         player_id = msg.player_id
-
         world.remove_player(player_id)
         world.seq += 1
 
