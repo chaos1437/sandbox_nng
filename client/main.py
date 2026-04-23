@@ -50,7 +50,9 @@ async def main(stdscr, config):
         while True:
             try:
                 msg = network.incoming.get_nowait()
+                log.debug(f"STATE_SYNC payload: {msg.payload}")
                 if msg.type == MsgType.STATE_SYNC:
+                    state.server_seq = msg.seq
                     state.apply_state_sync(msg.payload)
                     if not state.my_player_id and msg.player_id:
                         state.set_player_id(msg.player_id)
